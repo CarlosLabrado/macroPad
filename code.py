@@ -19,7 +19,6 @@ from adafruit_display_shapes.rect import Rect
 from adafruit_display_text import label
 from adafruit_macropad import MacroPad
 
-
 # CONFIGURABLES ------------------------
 
 MACRO_FOLDER = '/macros'
@@ -27,10 +26,26 @@ MACRO_FOLDER = '/macros'
 
 # CLASSES AND FUNCTIONS ----------------
 
+def wake_display():
+    macropad.display_sleep = False
+    macropad.pixels.brightness = 0.5
+    macropad.pixels.show()
+    macropad.display.refresh()
+    return time.time()
+
+
+def sleep_display():
+    macropad.display_sleep = True
+    macropad.pixels.brightness = 0.0
+    macropad.pixels.show()
+    macropad.display.refresh()
+
+
 class App:
     """ Class representing a host-side application, for which we have a set
         of macro sequences. Project code was originally more complex and
         this was helpful, but maybe it's excessive now?"""
+
     def __init__(self, appdata):
         self.name = appdata['name']
         self.macros = appdata['macros']
@@ -38,9 +53,9 @@ class App:
     def switch(self):
         """ Activate application settings; update OLED labels and LED
             colors. """
-        group[13].text = self.name   # Application name
+        group[13].text = self.name  # Application name
         for i in range(12):
-            if i < len(self.macros): # Key in use, set label + LED color
+            if i < len(self.macros):  # Key in use, set label + LED color
                 macropad.pixels[i] = self.macros[i][0]
                 group[i].text = self.macros[i][1]
             else:  # Key not in use, no label or LED
@@ -53,12 +68,15 @@ class App:
         macropad.pixels.show()
         macropad.display.refresh()
 
+        wake_display()
+
 
 # INITIALIZATION -----------------------
 
 macropad = MacroPad()
 macropad.display.auto_refresh = False
 macropad.pixels.auto_write = False
+macropad.display.brightness = 0.0  # As dim as possible
 
 # Set up displayio group with all the labels
 group = displayio.Group()
@@ -72,7 +90,7 @@ for key_index in range(12):
                              anchor_point=(x / 2, 1.0)))
 group.append(Rect(0, 0, macropad.display.width, 12, fill=0xFFFFFF))
 group.append(label.Label(terminalio.FONT, text='', color=0x000000,
-                         anchored_position=(macropad.display.width//2, -2),
+                         anchored_position=(macropad.display.width // 2, -2),
                          anchor_point=(0.5, 0.0)))
 macropad.display.root_group = group
 
@@ -89,6 +107,7 @@ for filename in files:
                 IndexError, TypeError) as err:
             print("ERROR in", filename)
             import traceback
+
             traceback.print_exception(err, err, err.__traceback__)
 
 if not apps:
@@ -102,10 +121,20 @@ last_encoder_switch = macropad.encoder_switch_debounced.pressed
 app_index = 0
 apps[app_index].switch()
 
-
 # MAIN LOOP ----------------------------
 
+start_time = time.time()
+sleep_time = 30 * 60  # minutes
+
 while True:
+
+    # sleep display logic
+    current_time = time.time()
+    elapsed_time = current_time - start_time
+    # Check if 60 minutes have passed
+    if elapsed_time >= sleep_time:
+        sleep_display()
+
     # Read encoder position. If it's changed, switch apps.
     position = macropad.encoder
     if position != last_position:
@@ -113,21 +142,27 @@ while True:
         apps[app_index].switch()
         last_position = position
 
+        start_time = wake_display()
+
     # Handle encoder button. If state has changed, and if there's a
     # corresponding macro, set up variables to act on this just like
     # the keypad keys, as if it were a 13th key/macro.
     macropad.encoder_switch_debounced.update()
     encoder_switch = macropad.encoder_switch_debounced.pressed
     if encoder_switch != last_encoder_switch:
+        start_time = wake_display()
+
         last_encoder_switch = encoder_switch
         if len(apps[app_index].macros) < 13:
-            continue    # No 13th macro, just resume main loop
-        key_number = 12 # else process below as 13th macro
+            continue  # No 13th macro, just resume main loop
+        key_number = 12  # else process below as 13th macro
         pressed = encoder_switch
     else:
         event = macropad.keys.events.get()
+        if event:
+            start_time = wake_display()
         if not event or event.key_number >= len(apps[app_index].macros):
-            continue # No key events, or no corresponding macro, resume loop
+            continue  # No key events, or no corresponding macro, resume loop
         key_number = event.key_number
         pressed = event.pressed
 
@@ -144,7 +179,7 @@ while True:
         # String (e.g. "Foo"): corresponding keys pressed & released
         # List []: one or more Consumer Control codes (can also do float delay)
         # Dict {}: mouse buttons/motion (might extend in future)
-        if key_number < 12: # No pixel for encoder button
+        if key_number < 12:  # No pixel for encoder button
             macropad.pixels[key_number] = 0xFFFFFF
             macropad.pixels.show()
         for item in sequence:
@@ -198,6 +233,6 @@ while True:
                 elif 'tone' in item:
                     macropad.stop_tone()
         macropad.consumer_control.release()
-        if key_number < 12: # No pixel for encoder button
+        if key_number < 12:  # No pixel for encoder button
             macropad.pixels[key_number] = apps[app_index].macros[key_number][0]
             macropad.pixels.show()
