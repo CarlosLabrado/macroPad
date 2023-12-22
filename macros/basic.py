@@ -22,16 +22,16 @@ app = {  # REQUIRED dict, must be named 'app'
     "macros": [  # List of button macros...
         # COLOR    LABEL    KEY SEQUENCE
         # 1st row ----------
-        (0x00007F, "SCShot", [Keycode.GUI, Keycode.LEFT_SHIFT, Keycode.S]),
+        (0x00007F, "Screen", [Keycode.GUI, Keycode.LEFT_SHIFT, Keycode.S]),
         (
             0x0B0073,
-            "Crop",
-            [Keycode.GUI, Keycode.LEFT_CONTROL, Keycode.LEFT_SHIFT, Keycode.T],
+            "WIN",
+            [Keycode.GUI],
         ),
         (0x170068, "VFZ", [Keycode.GUI, Keycode.LEFT_SHIFT, Keycode.BACKSLASH]),
         # 2nd row ----------
         (0x22005C, "HDR", [Keycode.GUI, Keycode.LEFT_ALT, Keycode.B]),
-        (0x2E0051, "SWAudio", [Keycode.GUI, Keycode.LEFT_CONTROL, Keycode.V]),
+        (0x2E0051, "Audio", [Keycode.GUI, Keycode.LEFT_CONTROL, Keycode.V]),
         (0x390045, "Vol+", [[ConsumerControlCode.VOLUME_INCREMENT]]),
         # 3rd row ----------
         (0x450039, "MainFZ", [Keycode.GUI, Keycode.LEFT_SHIFT, Keycode.GRAVE_ACCENT]),
