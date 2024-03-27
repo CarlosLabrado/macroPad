@@ -43,37 +43,57 @@ def sleep_display():
     macropad.display.refresh()
 
 
-def increase_brightness(macropad_param, current_brightness, delta=0.1):
+def increase_brightness(current_brightness, max_brightness=1.0, delta=0.1):
     """
-    Increase the brightness of the MacroPad's pixels.
+    Increase the brightness.
 
     :param delta: The amount to increase the brightness by. Default is 0.1.
+    :param max_brightness: The maximum brightness that can be achieved. Default is 1.0.
     """
     new_brightness = current_brightness + delta
-    new_brightness = min(new_brightness, 1.0)  # Ensure brightness does not exceed 1.0
-
-    macropad_param.pixels.brightness = new_brightness
-    macropad_param.pixels.show()
+    new_brightness = min(new_brightness, max_brightness)  # Ensure brightness does not exceed max_brightness
 
     return new_brightness
 
 
-def decrease_brightness(macropad_param, current_brightness, delta=0.1):
+def decrease_brightness(current_brightness, delta=0.1):
     """
-    Decrease the brightness of the MacroPad's pixels.
+    Decrease the brightness.
 
     :param delta: The amount to decrease the brightness by. Default is 0.1.
     """
     new_brightness = current_brightness - delta
-
     new_brightness = max(new_brightness, 0.0)  # Ensure brightness does not go below 0.0
-
-    macropad_param.pixels.brightness = new_brightness
-    macropad_param.pixels.show()
 
     return new_brightness
 
 
+def pulsate(current_brightness, max_brightness, pulsating_up, base_delta=0.02):
+    """
+    # TODO: still needs work, its not working as expected, too fast when pulsating at low brightness
+    Create a pulsating effect by increasing and decreasing the brightness.
+
+    :param base_delta: The base amount to increase or decrease the brightness by. Default is 0.02.
+    """
+    # Calculate delta based on the max brightness
+    delta = base_delta * (max_brightness / max_brightness)
+
+    # Ensure delta does not become too small
+    delta = max(delta, 0.001)  # Change this value to adjust the minimum delta
+
+    if pulsating_up:
+        new_brightness = increase_brightness(current_brightness, max_brightness, delta)
+        if new_brightness >= max_brightness:
+            pulsating_up = False
+    else:
+        new_brightness = decrease_brightness(current_brightness, delta)
+        # If new_brightness is very close to 0, set it to exactly 0
+        if new_brightness < 0.001:  # Change this value to adjust the threshold
+            new_brightness = 0.0
+        if new_brightness <= 0.0:
+            pulsating_up = True
+
+    return new_brightness, pulsating_up
 class App:
     """Class representing a host-side application, for which we have a set
     of macro sequences. Project code was originally more complex and
@@ -151,13 +171,13 @@ for filename in files:
             module = __import__(MACRO_FOLDER + "/" + filename[:-3])
             apps.append(App(module.app))
         except (
-            SyntaxError,
-            ImportError,
-            AttributeError,
-            KeyError,
-            NameError,
-            IndexError,
-            TypeError,
+                SyntaxError,
+                ImportError,
+                AttributeError,
+                KeyError,
+                NameError,
+                IndexError,
+                TypeError,
         ) as err:
             print("ERROR in", filename)
             import traceback
@@ -185,7 +205,22 @@ last_move_time = time.time()
 # Get the label
 label_to_animate = group[13]
 
+# In the main loop
+pulsating = False
+pulsating_up = True
+max_brightness = KEY_BRIGHTNESS
+counter = 0  # Counter for skipping cycles
+
 while True:
+    # Add this block inside the main loop to create the pulsating effect
+    if pulsating:
+        counter += 1
+        if counter >= 50:  # Change this value to control the speed of the pulsating effect
+            KEY_BRIGHTNESS, pulsating_up = pulsate(KEY_BRIGHTNESS, max_brightness, pulsating_up, base_delta=0.02)
+            macropad.pixels.brightness = KEY_BRIGHTNESS
+            macropad.pixels.show()
+            counter = 0  # Reset the counter
+
     # Animate the label
     current_time = time.time()
     if current_time - last_move_time >= 1:  # 1 second has passed
@@ -271,16 +306,18 @@ while True:
             elif isinstance(item, dict):
                 if "test_string" in item:
                     internal_selection = item["test_string"]
-                    if "increase_brightness" in internal_selection:
-                        KEY_BRIGHTNESS = increase_brightness(
-                            macropad_param=macropad, current_brightness=KEY_BRIGHTNESS
-                        )
-                        pass
-                    if "decrease_brightness" in internal_selection:
-                        KEY_BRIGHTNESS = decrease_brightness(
-                            macropad_param=macropad, current_brightness=KEY_BRIGHTNESS
-                        )
-                        pass
+                    if "toggle_effect" in internal_selection:
+                        pulsating = not pulsating
+                    elif "increase_brightness" in internal_selection:
+                        KEY_BRIGHTNESS = increase_brightness(KEY_BRIGHTNESS, max_brightness=1.0, delta=0.1)
+                        max_brightness = KEY_BRIGHTNESS
+                        macropad.pixels.brightness = KEY_BRIGHTNESS
+                        macropad.pixels.show()
+                    elif "decrease_brightness" in internal_selection:
+                        KEY_BRIGHTNESS = decrease_brightness(KEY_BRIGHTNESS, delta=0.1)
+                        max_brightness = KEY_BRIGHTNESS
+                        macropad.pixels.brightness = KEY_BRIGHTNESS
+                        macropad.pixels.show()
                 if "buttons" in item:
                     if item["buttons"] >= 0:
                         macropad.mouse.press(item["buttons"])

@@ -5,7 +5,7 @@ app = {  # REQUIRED dict, must be named 'app'
         # 1st row ----------
         (0x200000, "inc", [{"test_string": "increase_brightness"}]),
         (0x200000, "dec", [{"test_string": "decrease_brightness"}]),
-        (0x200000, "", []),
+        (0x200000, "pulse", [{"test_string": "toggle_effect"}]),
         # 2nd row ----------
         (0x200000, "", []),
         (0x200000, "", []),
