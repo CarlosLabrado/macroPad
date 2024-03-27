@@ -15,31 +15,29 @@
 
 # To reference Consumer Control codes, import ConsumerControlCode like so...
 from adafruit_hid.consumer_control_code import ConsumerControlCode
-
-# You can still import Keycode as well if a macro file mixes types!
-# See other macro files for typical Keycode examples.
+from adafruit_hid.keycode import Keycode  # REQUIRED if using Keycode.* values
 
 app = {  # REQUIRED dict, must be named 'app'
-    "name": "Media",  # Application name
+    "name": "Code",  # Application name
     "macros": [  # List of button macros...
         # COLOR    LABEL    KEY SEQUENCE
         # 1st row ----------
-        (0x000000, "", []),
-        (0x000020, "Vol+", [[ConsumerControlCode.VOLUME_INCREMENT]]),
-        (0x202020, "Bright+", [[ConsumerControlCode.BRIGHTNESS_INCREMENT]]),
+        (0x99FF99, "Resume", [Keycode.F9]),  # Light green
+        (0x88DD88, "Over", [Keycode.F8]),
+        (0x77BB77, "Into", [Keycode.F7]),
         # 2nd row ----------
-        (0x000000, "", []),
-        (0x000020, "Vol-", [[ConsumerControlCode.VOLUME_DECREMENT]]),
-        (0x202020, "Bright-", [[ConsumerControlCode.BRIGHTNESS_DECREMENT]]),
+        (0x669966, "Run", [Keycode.LEFT_SHIFT, Keycode.F10]),
+        (0x557755, "Debug", [Keycode.LEFT_SHIFT, Keycode.F9]),
+        (0x446644, "Out", [Keycode.LEFT_SHIFT, Keycode.F8]),
         # 3rd row ----------
-        (0x000000, "", []),
-        (0x200000, "Mute", [[ConsumerControlCode.MUTE]]),
-        (0x000000, "", []),
+        (0x335533, "Usages",  [Keycode.LEFT_ALT, Keycode.F7]),
+        (0x224422, "Surnd",  [Keycode.LEFT_CONTROL, Keycode.LEFT_ALT, Keycode.T]),
+        (0x113311, "Refact",  [Keycode.LEFT_SHIFT, Keycode.F6]),
         # 4th row ----------
-        (0x202000, "<<", [[ConsumerControlCode.SCAN_PREVIOUS_TRACK]]),
-        (0x002000, "Play/Pause", [[ConsumerControlCode.PLAY_PAUSE]]),
-        (0x202000, ">>", [[ConsumerControlCode.SCAN_NEXT_TRACK]]),
+        (0x556B2F, "Stop", [Keycode.LEFT_CONTROL, Keycode.F2]),  # Olive
+        (0x556B2F, "Over", [Keycode.LEFT_CONTROL, Keycode.F2]),
+        (0x556B2F, "Rerun", [Keycode.LEFT_CONTROL, Keycode.F5]),
         # Encoder button ---
-        (0x000000, "", []),
+        (0x000000, "", [Keycode.ESCAPE]),
     ],
 }

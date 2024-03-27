@@ -136,7 +136,7 @@ group.append(
         text="",
         color=0x000000,
         anchored_position=(macropad.display.width // 2, -2),
-        anchor_point=(0.5, 0.0),
+        anchor_point=(0.5, -0.2),
     )
 )
 macropad.display.root_group = group
@@ -178,7 +178,7 @@ apps[app_index].switch()
 # MAIN LOOP ----------------------------
 
 start_time = time.time()
-sleep_time = 30 * 60  # minutes
+sleep_time = 60 * 60  # minutes
 
 while True:
     # sleep display logic
