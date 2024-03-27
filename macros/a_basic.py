@@ -39,7 +39,7 @@ app = {  # REQUIRED dict, must be named 'app'
         (0x5C0022, "Vol-", [[ConsumerControlCode.VOLUME_DECREMENT]]),
         # 4th row ----------
         (0x680017, "<<", [[ConsumerControlCode.SCAN_PREVIOUS_TRACK]]),
-        (0x73000B, "Play/Pause", [[ConsumerControlCode.PLAY_PAUSE]]),
+        (0x73000B, "Play", [[ConsumerControlCode.PLAY_PAUSE]]),
         (0x7F0000, ">>", [[ConsumerControlCode.SCAN_NEXT_TRACK]]),
         # Encoder button ---
         (0x000000, "", [Keycode.CAPS_LOCK]),
