@@ -180,7 +180,23 @@ apps[app_index].switch()
 start_time = time.time()
 sleep_time = 60 * 60  # minutes
 
+last_move_time = time.time()
+
+# Get the label
+label_to_animate = group[13]
+
 while True:
+    # Animate the label
+    current_time = time.time()
+    if current_time - last_move_time >= 1:  # 1 second has passed
+        label_to_animate.x += 5  # Change this value to control the speed of the animation
+        if label_to_animate.x > macropad.display.width:
+            label_to_animate.x = -label_to_animate.bounding_box[2]  # Reset position
+        last_move_time = current_time  # Update the move time
+
+        # Refresh the display after updating the label's position
+        macropad.display.refresh()
+
     # sleep display logic
     current_time = time.time()
     elapsed_time = current_time - start_time
