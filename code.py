@@ -11,6 +11,8 @@ set, press MACROPAD keys to send key sequences and other USB protocols.
 
 # pylint: disable=import-error, unused-import, too-few-public-methods
 
+## IMPORTANT we are using circuitpython 8x
+
 import os
 import time
 import displayio
@@ -18,6 +20,7 @@ import terminalio
 from adafruit_display_shapes.rect import Rect
 from adafruit_display_text import label
 from adafruit_macropad import MacroPad
+import board
 
 # CONFIGURABLES ------------------------
 
@@ -25,7 +28,66 @@ MACRO_FOLDER = "/macros"
 KEY_BRIGHTNESS = 0.1
 
 
-# CLASSES AND FUNCTIONS ----------------
+from micropython import const
+from adafruit_seesaw import neopixel
+from adafruit_seesaw.seesaw import Seesaw
+
+try:
+    import typing  # pylint: disable=unused-import
+    from busio import I2C
+except ImportError:
+    pass
+
+_NEOKEY1X4_ADDR = const(0x30)
+
+_NEOKEY1X4_NEOPIX_PIN = const(3)
+
+_NEOKEY1X4_NUM_ROWS = const(1)
+_NEOKEY1X4_NUM_COLS = const(4)
+_NEOKEY1X4_NUM_KEYS = const(4)
+
+
+class NeoKey1x4(Seesaw):
+    """Driver for the Adafruit NeoKey 1x4."""
+
+    def __init__(
+        self, i2c_bus: I2C, interrupt: bool = False, addr: int = _NEOKEY1X4_ADDR, brightness: float = 0.01
+    ) -> None:
+        super().__init__(i2c_bus, addr)
+        self.interrupt_enabled = interrupt
+        self.pixels = neopixel.NeoPixel(
+            self,
+            _NEOKEY1X4_NEOPIX_PIN,
+            _NEOKEY1X4_NUM_KEYS,
+            brightness=brightness,
+            pixel_order=neopixel.GRB,
+        )
+        # set the pins to inputs, pullups
+        for b in range(4, 8):
+            self.pin_mode(b, self.INPUT_PULLUP)
+
+    def __getitem__(self, index: int) -> bool:
+        if not isinstance(index, int) or (index < 0) or (index > 3):
+            raise RuntimeError("Index must be 0 thru 3")
+        return not self.digital_read(index + 4)
+
+    def get_keys(self) -> typing.List[bool]:
+        """Read all 4 keys at once and return an array of booleans.
+
+        Returns:
+            typing.List[bool]: _description_
+        """
+        # use a bit mask with ports 4-7 to read all 4 keys at once
+        bulk_read = self.digital_read_bulk(0xF0)
+
+        # convert the leftmost 4 bits to an array of booleans and return
+        keys = [bulk_read & (1 << i) == 0 for i in range(4, 8)]
+        return keys
+
+
+# Initialize the NeoKey object
+i2c_bus = board.I2C()
+neokey = NeoKey1x4(i2c_bus, addr=0x30, brightness=KEY_BRIGHTNESS*0.1)
 
 
 def wake_display():
@@ -235,7 +297,41 @@ pulsating_up = True
 max_brightness = KEY_BRIGHTNESS
 counter = 0  # Counter for skipping cycles
 
+
+class Debouncer:
+    def __init__(self):
+        self.state = False
+        self.last_state = False
+
+    def update(self, new_state):
+        self.last_state = self.state
+        self.state = new_state
+
+    def is_pressed(self):
+        return self.state and not self.last_state
+
+# Create debouncers for each key
+debouncers = [Debouncer() for _ in range(4)]
+
+# Define a list of colors for each key
+colors = [0xFF0000, 0xFFFF00, 0x00FF00, 0x00FFFF]
+
 while True:
+    # Update the state of each debouncer
+    for i in range(4):
+        debouncers[i].update(neokey[i])
+
+    # Check each button, if pressed, light up the matching neopixel with its specific color!
+    for i in range(4):
+        if debouncers[i].is_pressed():
+            print(f"Button {chr(65 + i)}")  # Button A, B, C, D
+            neokey.pixels[i] = colors[i]  # Use the color corresponding to the button
+        else:
+            neokey.pixels[i] = 0xFF0000
+
+    # Set the brightness to KEY_BRIGHTNESS in every cycle
+    neokey.pixels.brightness = KEY_BRIGHTNESS
+
     # Add this block inside the main loop to create the pulsating effect
     if pulsating:
         counter += 1
