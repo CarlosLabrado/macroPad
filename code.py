@@ -29,6 +29,10 @@ KEY_BRIGHTNESS = 0.1
 
 
 def wake_display():
+    """
+    Wakes up the display and sets the brightness of the keys.
+    Returns the current time.
+    """
     macropad.display_sleep = False
     macropad.pixels.brightness = KEY_BRIGHTNESS
     macropad.pixels.show()
@@ -37,21 +41,26 @@ def wake_display():
 
 
 def sleep_display():
+    """
+    Puts the display to sleep and turns off the brightness of the keys.
+    """
     macropad.display_sleep = True
     macropad.pixels.brightness = 0.0
     macropad.pixels.show()
     macropad.display.refresh()
 
 
-def increase_brightness(current_brightness, max_brightness=1.0, delta=0.1):
+def increase_brightness(current_brightness, param_max_brightness=1.0, delta=0.1):
     """
     Increase the brightness.
 
+    :param current_brightness: The current brightness level.
+    :param param_max_brightness: The maximum brightness that can be achieved. Default is 1.0.
     :param delta: The amount to increase the brightness by. Default is 0.1.
-    :param max_brightness: The maximum brightness that can be achieved. Default is 1.0.
+    :return: The new brightness level.
     """
     new_brightness = current_brightness + delta
-    new_brightness = min(new_brightness, max_brightness)  # Ensure brightness does not exceed max_brightness
+    new_brightness = min(new_brightness, param_max_brightness)  # Ensure brightness does not exceed max_brightness
 
     return new_brightness
 
@@ -60,7 +69,9 @@ def decrease_brightness(current_brightness, delta=0.1):
     """
     Decrease the brightness.
 
+    :param current_brightness: The current brightness level.
     :param delta: The amount to decrease the brightness by. Default is 0.1.
+    :return: The new brightness level.
     """
     new_brightness = current_brightness - delta
     new_brightness = max(new_brightness, 0.0)  # Ensure brightness does not go below 0.0
@@ -68,44 +79,57 @@ def decrease_brightness(current_brightness, delta=0.1):
     return new_brightness
 
 
-def pulsate(current_brightness, max_brightness, pulsating_up, base_delta=0.02):
+def pulsate(current_brightness, param_max_brightness, param_pulsating_up, base_delta=0.02):
     """
     # TODO: still needs work, its not working as expected, too fast when pulsating at low brightness
     Create a pulsating effect by increasing and decreasing the brightness.
 
+    :param current_brightness: The current brightness level.
+    :param param_max_brightness: The maximum brightness that can be achieved.
+    :param param_pulsating_up: A boolean indicating whether the brightness is currently increasing.
     :param base_delta: The base amount to increase or decrease the brightness by. Default is 0.02.
+    :return: The new brightness level and the updated direction of pulsation.
     """
     # Calculate delta based on the max brightness
-    delta = base_delta * (max_brightness / max_brightness)
+    delta = base_delta * (param_max_brightness / param_max_brightness)
 
     # Ensure delta does not become too small
     delta = max(delta, 0.001)  # Change this value to adjust the minimum delta
 
-    if pulsating_up:
-        new_brightness = increase_brightness(current_brightness, max_brightness, delta)
-        if new_brightness >= max_brightness:
-            pulsating_up = False
+    if param_pulsating_up:
+        new_brightness = increase_brightness(current_brightness, param_max_brightness, delta)
+        if new_brightness >= param_max_brightness:
+            param_pulsating_up = False
     else:
         new_brightness = decrease_brightness(current_brightness, delta)
         # If new_brightness is very close to 0, set it to exactly 0
         if new_brightness < 0.001:  # Change this value to adjust the threshold
             new_brightness = 0.0
         if new_brightness <= 0.0:
-            pulsating_up = True
+            param_pulsating_up = True
 
-    return new_brightness, pulsating_up
+    return new_brightness, param_pulsating_up
+
+
 class App:
     """Class representing a host-side application, for which we have a set
     of macro sequences. Project code was originally more complex and
     this was helpful, but maybe it's excessive now?"""
 
     def __init__(self, appdata):
+        """
+        Initialize the App instance.
+
+        :param appdata: A dictionary containing the application data.
+        """
         self.name = appdata["name"]
         self.macros = appdata["macros"]
 
     def switch(self):
-        """Activate application settings; update OLED labels and LED
-        colors."""
+        """
+        Activate application settings; update OLED labels and LED
+        colors.
+        """
         group[13].text = self.name  # Application name
         for i in range(12):
             if i < len(self.macros):  # Key in use, set label + LED color
@@ -309,7 +333,7 @@ while True:
                     if "toggle_effect" in internal_selection:
                         pulsating = not pulsating
                     elif "increase_brightness" in internal_selection:
-                        KEY_BRIGHTNESS = increase_brightness(KEY_BRIGHTNESS, max_brightness=1.0, delta=0.1)
+                        KEY_BRIGHTNESS = increase_brightness(KEY_BRIGHTNESS, param_max_brightness=1.0, delta=0.1)
                         max_brightness = KEY_BRIGHTNESS
                         macropad.pixels.brightness = KEY_BRIGHTNESS
                         macropad.pixels.show()
