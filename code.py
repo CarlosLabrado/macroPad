@@ -25,8 +25,7 @@ import board
 # CONFIGURABLES ------------------------
 
 MACRO_FOLDER = "/macros"
-KEY_BRIGHTNESS = 0.1
-
+GLOBAL_KEY_BRIGHTNESS = 0.1
 
 from micropython import const
 from adafruit_seesaw import neopixel
@@ -51,7 +50,7 @@ class NeoKey1x4(Seesaw):
     """Driver for the Adafruit NeoKey 1x4."""
 
     def __init__(
-        self, i2c_bus: I2C, interrupt: bool = False, addr: int = _NEOKEY1X4_ADDR, brightness: float = 0.01
+            self, i2c_bus: I2C, interrupt: bool = False, addr: int = _NEOKEY1X4_ADDR, brightness: float = 0.01
     ) -> None:
         super().__init__(i2c_bus, addr)
         self.interrupt_enabled = interrupt
@@ -87,7 +86,7 @@ class NeoKey1x4(Seesaw):
 
 # Initialize the NeoKey object
 i2c_bus = board.I2C()
-neokey = NeoKey1x4(i2c_bus, addr=0x30, brightness=KEY_BRIGHTNESS*0.1)
+neokey = NeoKey1x4(i2c_bus, addr=0x30, brightness=GLOBAL_KEY_BRIGHTNESS * 0.1)
 
 
 def wake_display():
@@ -96,7 +95,7 @@ def wake_display():
     Returns the current time.
     """
     macropad.display_sleep = False
-    macropad.pixels.brightness = KEY_BRIGHTNESS
+    macropad.pixels.brightness = GLOBAL_KEY_BRIGHTNESS
     macropad.pixels.show()
     macropad.display.refresh()
     return time.time()
@@ -139,38 +138,6 @@ def decrease_brightness(current_brightness, delta=0.1):
     new_brightness = max(new_brightness, 0.0)  # Ensure brightness does not go below 0.0
 
     return new_brightness
-
-
-def pulsate(current_brightness, param_max_brightness, param_pulsating_up, base_delta=0.02):
-    """
-    # TODO: still needs work, its not working as expected, too fast when pulsating at low brightness
-    Create a pulsating effect by increasing and decreasing the brightness.
-
-    :param current_brightness: The current brightness level.
-    :param param_max_brightness: The maximum brightness that can be achieved.
-    :param param_pulsating_up: A boolean indicating whether the brightness is currently increasing.
-    :param base_delta: The base amount to increase or decrease the brightness by. Default is 0.02.
-    :return: The new brightness level and the updated direction of pulsation.
-    """
-    # Calculate delta based on the max brightness
-    delta = base_delta * (param_max_brightness / param_max_brightness)
-
-    # Ensure delta does not become too small
-    delta = max(delta, 0.001)  # Change this value to adjust the minimum delta
-
-    if param_pulsating_up:
-        new_brightness = increase_brightness(current_brightness, param_max_brightness, delta)
-        if new_brightness >= param_max_brightness:
-            param_pulsating_up = False
-    else:
-        new_brightness = decrease_brightness(current_brightness, delta)
-        # If new_brightness is very close to 0, set it to exactly 0
-        if new_brightness < 0.001:  # Change this value to adjust the threshold
-            new_brightness = 0.0
-        if new_brightness <= 0.0:
-            param_pulsating_up = True
-
-    return new_brightness, param_pulsating_up
 
 
 class App:
@@ -216,7 +183,7 @@ macropad = MacroPad()
 macropad.display.auto_refresh = False
 macropad.pixels.auto_write = False
 macropad.display.brightness = 0.0  # As dim as possible
-macropad.pixels.brightness = KEY_BRIGHTNESS
+macropad.pixels.brightness = GLOBAL_KEY_BRIGHTNESS
 
 # Set up displayio group with all the labels
 group = displayio.Group()
@@ -283,19 +250,13 @@ apps[app_index].switch()
 
 # MAIN LOOP ----------------------------
 
-start_time = time.time()
+global_start_time = time.time()
 sleep_time = 60 * 60  # minutes
 
 last_move_time = time.time()
 
 # Get the label
 label_to_animate = group[13]
-
-# In the main loop
-pulsating = False
-pulsating_up = True
-max_brightness = KEY_BRIGHTNESS
-counter = 0  # Counter for skipping cycles
 
 
 class Debouncer:
@@ -310,54 +271,121 @@ class Debouncer:
     def is_pressed(self):
         return self.state and not self.last_state
 
+
 # Create debouncers for each key
 debouncers = [Debouncer() for _ in range(4)]
 
 # Define a list of colors for each key
 colors = [0xFF0000, 0xFFFF00, 0x00FF00, 0x00FFFF]
 
-while True:
-    # Update the state of each debouncer
-    for i in range(4):
-        debouncers[i].update(neokey[i])
 
-    # Check each button, if pressed, light up the matching neopixel with its specific color!
-    for i in range(4):
-        if debouncers[i].is_pressed():
+def update_debouncers(debouncers_param, neokey_param):
+    for i in range(4):  # Only for the new keys
+        debouncers_param[i].update(neokey_param[i])
+
+
+def check_buttons(debouncers_param, neokey_param, colors_param):
+    for i in range(4):  # Only for the new keys
+        if debouncers_param[i].is_pressed():
             print(f"Button {chr(65 + i)}")  # Button A, B, C, D
-            neokey.pixels[i] = colors[i]  # Use the color corresponding to the button
+            neokey_param.pixels[i] = colors_param[i]  # Use the color corresponding to the button
         else:
-            neokey.pixels[i] = 0xFF0000
+            neokey_param.pixels[i] = 0xFF0000
 
-    # Set the brightness to KEY_BRIGHTNESS in every cycle
-    neokey.pixels.brightness = KEY_BRIGHTNESS
 
-    # Add this block inside the main loop to create the pulsating effect
-    if pulsating:
-        counter += 1
-        if counter >= 50:  # Change this value to control the speed of the pulsating effect
-            KEY_BRIGHTNESS, pulsating_up = pulsate(KEY_BRIGHTNESS, max_brightness, pulsating_up, base_delta=0.02)
-            macropad.pixels.brightness = KEY_BRIGHTNESS
-            macropad.pixels.show()
-            counter = 0  # Reset the counter
-
-    # Animate the label
+def animate_label(label_to_animate_param, last_move_time_param, macropad_param):
     current_time = time.time()
-    if current_time - last_move_time >= 1:  # 1 second has passed
-        label_to_animate.x += 5  # Change this value to control the speed of the animation
-        if label_to_animate.x > macropad.display.width:
-            label_to_animate.x = -label_to_animate.bounding_box[2]  # Reset position
-        last_move_time = current_time  # Update the move time
+    if current_time - last_move_time_param >= 1:  # 1 second has passed
+        label_to_animate_param.x += 5  # Change this value to control the speed of the animation
+        if label_to_animate_param.x > macropad_param.display.width:
+            label_to_animate_param.x = -label_to_animate_param.bounding_box[2]  # Reset position
+        last_move_time_param = current_time  # Update the move time
+        macropad_param.display.refresh()
+    return last_move_time_param
 
-        # Refresh the display after updating the label's position
-        macropad.display.refresh()
 
-    # sleep display logic
-    current_time = time.time()
-    elapsed_time = current_time - start_time
-    # Check if 60 minutes have passed
-    if elapsed_time >= sleep_time:
+def execute_sequence(pressed_param, sequence_param, macropad_param, max_brightness, start_time):
+    if pressed_param:
+        start_time = wake_display()
+
+        for item in sequence_param:
+            if isinstance(item, int):
+                if item >= 0:
+                    macropad_param.keyboard.press(item)
+                else:
+                    macropad_param.keyboard.release(-item)
+            elif isinstance(item, float):
+                time.sleep(item)
+            elif isinstance(item, str):
+                macropad_param.keyboard_layout.write(item)
+            elif isinstance(item, list):
+                for code in item:
+                    if isinstance(code, int):
+                        macropad_param.consumer_control.release()
+                        macropad_param.consumer_control.press(code)
+                    if isinstance(code, float):
+                        time.sleep(code)
+            elif isinstance(item, dict):
+                max_brightness = handle_dict_item(item_param=item, macropad_param=macropad_param,
+                                                  max_brightness=max_brightness)
+    else:
+        # Release any still-pressed keys, consumer codes, mouse buttons
+        # Keys and mouse buttons are individually released this way (rather
+        # than release_all()) because pad supports multi-key rollover, e.g.
+        # could have a meta key or right-mouse held down by one macro and
+        # press/release keys/buttons with others. Navigate popups, etc.
+        for item in sequence_param:
+            if isinstance(item, int):
+                if item >= 0:
+                    macropad_param.keyboard.release(item)
+            elif isinstance(item, dict):
+                if "buttons" in item:
+                    if item["buttons"] >= 0:
+                        macropad_param.mouse.release(item["buttons"])
+                elif "tone" in item:
+                    macropad_param.stop_tone()
+        macropad_param.consumer_control.release()
+        if key_number < 12:  # No pixel for encoder button
+            macropad_param.pixels[key_number] = apps[app_index].macros[key_number][0]
+            macropad_param.pixels.show()
+    return max_brightness, start_time
+
+
+def manage_sleep_logic(start_time, sleep_time_param):
+    inner_current_time = time.time()
+    elapsed_time = inner_current_time - start_time
+    if elapsed_time >= sleep_time_param:
         sleep_display()
+    return inner_current_time
+
+
+def handle_dict_item(item_param, macropad_param, max_brightness):
+    if "test_string" in item_param:
+        internal_selection = item_param["test_string"]
+        if "toggle_effect" in internal_selection:
+            pass  # TODO: Implement the toggle effect
+        elif "increase_brightness" in internal_selection:
+            max_brightness = increase_brightness(max_brightness, param_max_brightness=1.0, delta=0.1)
+            max_brightness = max_brightness
+            macropad_param.pixels.brightness = max_brightness
+            macropad_param.pixels.show()
+        elif "decrease_brightness" in internal_selection:
+            max_brightness = decrease_brightness(max_brightness, delta=0.1)
+            max_brightness = max_brightness
+            macropad_param.pixels.brightness = max_brightness
+            macropad_param.pixels.show()
+    return max_brightness
+
+
+while True:
+    update_debouncers(debouncers_param=debouncers, neokey_param=neokey)
+    check_buttons(debouncers_param=debouncers, neokey_param=neokey, colors_param=colors)
+    neokey.pixels.brightness = GLOBAL_KEY_BRIGHTNESS * 0.05
+
+    last_move_time = animate_label(label_to_animate_param=label_to_animate, last_move_time_param=last_move_time,
+                                   macropad_param=macropad)
+
+    current_time = manage_sleep_logic(start_time=global_start_time, sleep_time_param=sleep_time)
 
     # Read encoder position. If it's changed, switch apps.
     position = macropad.encoder
@@ -366,7 +394,7 @@ while True:
         apps[app_index].switch()
         last_position = position
 
-        start_time = wake_display()
+        global_start_time = wake_display()
 
     # Handle encoder button. If state has changed, and if there's a
     # corresponding macro, set up variables to act on this just like
@@ -374,7 +402,7 @@ while True:
     macropad.encoder_switch_debounced.update()
     encoder_switch = macropad.encoder_switch_debounced.pressed
     if encoder_switch != last_encoder_switch:
-        start_time = wake_display()
+        global_start_time = wake_display()
 
         last_encoder_switch = encoder_switch
         if len(apps[app_index].macros) < 13:
@@ -393,87 +421,8 @@ while True:
     # are avoided by 'continue' statements above which resume the loop.
 
     sequence = apps[app_index].macros[key_number][2]
-    if pressed:
-        start_time = wake_display()
 
-        # 'sequence' is an arbitrary-length list, each item is one of:
-        # Positive integer (e.g. Keycode.KEYPAD_MINUS): key pressed
-        # Negative integer: (absolute value) key released
-        # Float (e.g. 0.25): delay in seconds
-        # String (e.g. "Foo"): corresponding keys pressed & released
-        # List []: one or more Consumer Control codes (can also do float delay)
-        # Dict {}: mouse buttons/motion (might extend in future)
-        if key_number < 12:  # No pixel for encoder button
-            macropad.pixels[key_number] = 0xFFFFFF
-            macropad.pixels.show()
-        for item in sequence:
-            if isinstance(item, int):
-                if item >= 0:
-                    macropad.keyboard.press(item)
-                else:
-                    macropad.keyboard.release(-item)
-            elif isinstance(item, float):
-                time.sleep(item)
-            elif isinstance(item, str):
-                macropad.keyboard_layout.write(item)
-            elif isinstance(item, list):
-                for code in item:
-                    if isinstance(code, int):
-                        macropad.consumer_control.release()
-                        macropad.consumer_control.press(code)
-                    if isinstance(code, float):
-                        time.sleep(code)
-            elif isinstance(item, dict):
-                if "test_string" in item:
-                    internal_selection = item["test_string"]
-                    if "toggle_effect" in internal_selection:
-                        pulsating = not pulsating
-                    elif "increase_brightness" in internal_selection:
-                        KEY_BRIGHTNESS = increase_brightness(KEY_BRIGHTNESS, param_max_brightness=1.0, delta=0.1)
-                        max_brightness = KEY_BRIGHTNESS
-                        macropad.pixels.brightness = KEY_BRIGHTNESS
-                        macropad.pixels.show()
-                    elif "decrease_brightness" in internal_selection:
-                        KEY_BRIGHTNESS = decrease_brightness(KEY_BRIGHTNESS, delta=0.1)
-                        max_brightness = KEY_BRIGHTNESS
-                        macropad.pixels.brightness = KEY_BRIGHTNESS
-                        macropad.pixels.show()
-                if "buttons" in item:
-                    if item["buttons"] >= 0:
-                        macropad.mouse.press(item["buttons"])
-                    else:
-                        macropad.mouse.release(-item["buttons"])
-                macropad.mouse.move(
-                    item["x"] if "x" in item else 0,
-                    item["y"] if "y" in item else 0,
-                    item["wheel"] if "wheel" in item else 0,
-                )
-                if "tone" in item:
-                    if item["tone"] > 0:
-                        macropad.stop_tone()
-                        macropad.start_tone(item["tone"])
-                    else:
-                        macropad.stop_tone()
-                elif "play" in item:
-                    macropad.play_file(item["play"])
-
-    else:
-        # Release any still-pressed keys, consumer codes, mouse buttons
-        # Keys and mouse buttons are individually released this way (rather
-        # than release_all()) because pad supports multi-key rollover, e.g.
-        # could have a meta key or right-mouse held down by one macro and
-        # press/release keys/buttons with others. Navigate popups, etc.
-        for item in sequence:
-            if isinstance(item, int):
-                if item >= 0:
-                    macropad.keyboard.release(item)
-            elif isinstance(item, dict):
-                if "buttons" in item:
-                    if item["buttons"] >= 0:
-                        macropad.mouse.release(item["buttons"])
-                elif "tone" in item:
-                    macropad.stop_tone()
-        macropad.consumer_control.release()
-        if key_number < 12:  # No pixel for encoder button
-            macropad.pixels[key_number] = apps[app_index].macros[key_number][0]
-            macropad.pixels.show()
+    GLOBAL_KEY_BRIGHTNESS, global_start_time = execute_sequence(pressed_param=pressed, sequence_param=sequence,
+                                                                macropad_param=macropad,
+                                                                max_brightness=GLOBAL_KEY_BRIGHTNESS,
+                                                                start_time=global_start_time)
