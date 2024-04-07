@@ -21,6 +21,8 @@ from adafruit_display_shapes.rect import Rect
 from adafruit_display_text import label
 from adafruit_macropad import MacroPad
 import board
+from adafruit_hid.keycode import Keycode
+from adafruit_hid.consumer_control_code import ConsumerControlCode
 
 # CONFIGURABLES ------------------------
 
@@ -284,13 +286,22 @@ def update_debouncers(debouncers_param, neokey_param):
         debouncers_param[i].update(neokey_param[i])
 
 
-def check_buttons(debouncers_param, neokey_param, colors_param):
+def check_buttons(debouncers_param, neokey_param, colors_param, macropad_param):
+    key_mapping = [Keycode.ESCAPE, ConsumerControlCode.VOLUME_INCREMENT, ConsumerControlCode.VOLUME_DECREMENT,
+                   ConsumerControlCode.PLAY_PAUSE]
     for i in range(4):  # Only for the new keys
+        # There's a different logic for pressing Keycodes and Consumer control codes
         if debouncers_param[i].is_pressed():
-            print(f"Button {chr(65 + i)}")  # Button A, B, C, D
             neokey_param.pixels[i] = colors_param[i]  # Use the color corresponding to the button
+            if i == 0:
+                macropad_param.keyboard.press(key_mapping[i])  # Press the corresponding key
+                macropad_param.keyboard.release_all()  # Release all keys
+            else:
+                macropad_param.consumer_control.release()
+                macropad_param.consumer_control.press(key_mapping[i])
         else:
             neokey_param.pixels[i] = 0xFF0000
+    macropad_param.consumer_control.release()
 
 
 def animate_label(label_to_animate_param, last_move_time_param, macropad_param):
@@ -379,7 +390,7 @@ def handle_dict_item(item_param, macropad_param, max_brightness):
 
 while True:
     update_debouncers(debouncers_param=debouncers, neokey_param=neokey)
-    check_buttons(debouncers_param=debouncers, neokey_param=neokey, colors_param=colors)
+    check_buttons(debouncers_param=debouncers, neokey_param=neokey, colors_param=colors, macropad_param=macropad)
     neokey.pixels.brightness = GLOBAL_KEY_BRIGHTNESS * 0.05
 
     last_move_time = animate_label(label_to_animate_param=label_to_animate, last_move_time_param=last_move_time,
@@ -421,7 +432,7 @@ while True:
     # are avoided by 'continue' statements above which resume the loop.
 
     sequence = apps[app_index].macros[key_number][2]
-
+    print(f"good {sequence}")
     GLOBAL_KEY_BRIGHTNESS, global_start_time = execute_sequence(pressed_param=pressed, sequence_param=sequence,
                                                                 macropad_param=macropad,
                                                                 max_brightness=GLOBAL_KEY_BRIGHTNESS,
