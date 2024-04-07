@@ -27,7 +27,7 @@ from adafruit_hid.consumer_control_code import ConsumerControlCode
 # CONFIGURABLES ------------------------
 
 MACRO_FOLDER = "/macros"
-GLOBAL_KEY_BRIGHTNESS = 0.1
+global_key_brightness = 0.1
 
 from micropython import const
 from adafruit_seesaw import neopixel
@@ -88,58 +88,7 @@ class NeoKey1x4(Seesaw):
 
 # Initialize the NeoKey object
 i2c_bus = board.I2C()
-neokey = NeoKey1x4(i2c_bus, addr=0x30, brightness=GLOBAL_KEY_BRIGHTNESS * 0.1)
-
-
-def wake_display():
-    """
-    Wakes up the display and sets the brightness of the keys.
-    Returns the current time.
-    """
-    macropad.display_sleep = False
-    macropad.pixels.brightness = GLOBAL_KEY_BRIGHTNESS
-    macropad.pixels.show()
-    macropad.display.refresh()
-    return time.time()
-
-
-def sleep_display():
-    """
-    Puts the display to sleep and turns off the brightness of the keys.
-    """
-    macropad.display_sleep = True
-    macropad.pixels.brightness = 0.0
-    macropad.pixels.show()
-    macropad.display.refresh()
-
-
-def increase_brightness(current_brightness, param_max_brightness=1.0, delta=0.1):
-    """
-    Increase the brightness.
-
-    :param current_brightness: The current brightness level.
-    :param param_max_brightness: The maximum brightness that can be achieved. Default is 1.0.
-    :param delta: The amount to increase the brightness by. Default is 0.1.
-    :return: The new brightness level.
-    """
-    new_brightness = current_brightness + delta
-    new_brightness = min(new_brightness, param_max_brightness)  # Ensure brightness does not exceed max_brightness
-
-    return new_brightness
-
-
-def decrease_brightness(current_brightness, delta=0.1):
-    """
-    Decrease the brightness.
-
-    :param current_brightness: The current brightness level.
-    :param delta: The amount to decrease the brightness by. Default is 0.1.
-    :return: The new brightness level.
-    """
-    new_brightness = current_brightness - delta
-    new_brightness = max(new_brightness, 0.0)  # Ensure brightness does not go below 0.0
-
-    return new_brightness
+neokey = NeoKey1x4(i2c_bus, addr=0x30, brightness=global_key_brightness * 0.1)
 
 
 class App:
@@ -176,8 +125,6 @@ class App:
         macropad.pixels.show()
         macropad.display.refresh()
 
-        wake_display()
-
 
 # INITIALIZATION -----------------------
 
@@ -185,7 +132,7 @@ macropad = MacroPad()
 macropad.display.auto_refresh = False
 macropad.pixels.auto_write = False
 macropad.display.brightness = 0.0  # As dim as possible
-macropad.pixels.brightness = GLOBAL_KEY_BRIGHTNESS
+macropad.pixels.brightness = global_key_brightness
 
 # Set up displayio group with all the labels
 group = displayio.Group()
@@ -253,9 +200,10 @@ apps[app_index].switch()
 # MAIN LOOP ----------------------------
 
 global_start_time = time.time()
-sleep_time = 60 * 60  # minutes
+# sleep_time = 60 * 60  # minutes
+sleep_time = 10  # secs
 
-last_move_time = time.time()
+last_move_time = global_start_time
 
 # Get the label
 label_to_animate = group[13]
@@ -305,19 +253,19 @@ def check_buttons(debouncers_param, neokey_param, colors_param, macropad_param):
 
 
 def animate_label(label_to_animate_param, last_move_time_param, macropad_param):
-    current_time = time.time()
-    if current_time - last_move_time_param >= 1:  # 1 second has passed
+    inner_current_time = time.time()
+    if inner_current_time - last_move_time_param >= 1:  # 1 second has passed
         label_to_animate_param.x += 5  # Change this value to control the speed of the animation
         if label_to_animate_param.x > macropad_param.display.width:
             label_to_animate_param.x = -label_to_animate_param.bounding_box[2]  # Reset position
-        last_move_time_param = current_time  # Update the move time
+        last_move_time_param = inner_current_time  # Update the move time
         macropad_param.display.refresh()
     return last_move_time_param
 
 
-def execute_sequence(pressed_param, sequence_param, macropad_param, max_brightness, start_time):
+def execute_sequence(pressed_param, sequence_param, macropad_param, max_brightness, start_time, display_manager_param):
     if pressed_param:
-        start_time = wake_display()
+        start_time = display_manager_param.wake_display(macropad_param=macropad_param)
 
         for item in sequence_param:
             if isinstance(item, int):
@@ -337,8 +285,8 @@ def execute_sequence(pressed_param, sequence_param, macropad_param, max_brightne
                     if isinstance(code, float):
                         time.sleep(code)
             elif isinstance(item, dict):
-                max_brightness = handle_dict_item(item_param=item, macropad_param=macropad_param,
-                                                  max_brightness=max_brightness)
+                handle_dict_item(item_param=item, macropad_param=macropad_param,
+                                 max_brightness=max_brightness, display_manager_param=display_manager_param)
     else:
         # Release any still-pressed keys, consumer codes, mouse buttons
         # Keys and mouse buttons are individually released this way (rather
@@ -359,44 +307,119 @@ def execute_sequence(pressed_param, sequence_param, macropad_param, max_brightne
         if key_number < 12:  # No pixel for encoder button
             macropad_param.pixels[key_number] = apps[app_index].macros[key_number][0]
             macropad_param.pixels.show()
-    return max_brightness, start_time
+    return start_time
 
 
-def manage_sleep_logic(start_time, sleep_time_param):
-    inner_current_time = time.time()
-    elapsed_time = inner_current_time - start_time
-    if elapsed_time >= sleep_time_param:
-        sleep_display()
-    return inner_current_time
-
-
-def handle_dict_item(item_param, macropad_param, max_brightness):
+def handle_dict_item(item_param, macropad_param, max_brightness, display_manager_param):
     if "test_string" in item_param:
         internal_selection = item_param["test_string"]
         if "toggle_effect" in internal_selection:
             pass  # TODO: Implement the toggle effect
         elif "increase_brightness" in internal_selection:
-            max_brightness = increase_brightness(max_brightness, param_max_brightness=1.0, delta=0.1)
+            max_brightness = display_manager_param.increase_brightness(max_brightness, param_max_brightness=1.0,
+                                                                       delta=0.1)
             max_brightness = max_brightness
             macropad_param.pixels.brightness = max_brightness
             macropad_param.pixels.show()
         elif "decrease_brightness" in internal_selection:
-            max_brightness = decrease_brightness(max_brightness, delta=0.1)
+            max_brightness = display_manager_param.decrease_brightness(max_brightness, delta=0.1)
             max_brightness = max_brightness
             macropad_param.pixels.brightness = max_brightness
             macropad_param.pixels.show()
-    return max_brightness
 
+
+class DisplayManager:
+    def __init__(self, initial_brightness):
+        self.is_display_asleep = False
+        self.global_key_brightness = initial_brightness
+        self.last_known_brightness = initial_brightness
+
+    def wake_display(self, macropad_param):
+        if self.is_display_asleep:
+            print("Waking up display")
+            self.restore_brightness()
+            macropad_param.display_sleep = False
+            macropad_param.pixels.brightness = self.global_key_brightness
+            macropad_param.pixels.show()
+            macropad_param.display.refresh()
+            self.is_display_asleep = False
+        return time.time()
+
+    def sleep_display(self, macropad_param):
+        if not self.is_display_asleep:
+            print("Putting display to sleep")
+            self.save_brightness_state()
+            self.global_key_brightness = 0.0
+            macropad_param.display_sleep = True
+            macropad_param.pixels.brightness = self.global_key_brightness
+            macropad_param.pixels.show()
+            macropad_param.display.refresh()
+            self.is_display_asleep = True
+
+    def restore_brightness(self):
+        self.global_key_brightness = self.last_known_brightness
+
+    def save_brightness_state(self):
+        self.last_known_brightness = self.global_key_brightness
+
+    def manage_sleep_logic(self, start_time, sleep_time_param, macropad_param, neokey_param):
+        inner_current_time = time.time()
+        elapsed_time = inner_current_time - start_time
+        if elapsed_time >= sleep_time_param and not self.is_display_asleep:
+            self.sleep_display(macropad_param=macropad_param)
+            neokey_param.pixels.brightness = self.global_key_brightness
+        return inner_current_time
+
+    def increase_brightness(self, current_brightness, param_max_brightness=1.0, delta=0.1):
+        """
+        Increase the brightness.
+        # TODO fix this, is only increasing once
+
+        :param current_brightness: The current brightness level.
+        :param param_max_brightness: The maximum brightness that can be achieved. Default is 1.0.
+        :param delta: The amount to increase the brightness by. Default is 0.1.
+        :return: The new brightness level.
+        """
+        print("Increasing brightness")
+        new_brightness = current_brightness + delta
+        new_brightness = min(new_brightness, param_max_brightness)  # Ensure brightness does not exceed max_brightness
+
+        self.global_key_brightness = new_brightness
+        return new_brightness
+
+    def decrease_brightness(self, current_brightness, delta=0.1):
+        """
+        Decrease the brightness.
+
+        :param current_brightness: The current brightness level.
+        :param delta: The amount to decrease the brightness by. Default is 0.1.
+        :return: The new brightness level.
+        """
+        print("Decreasing brightness")
+        new_brightness = current_brightness - delta
+        new_brightness = max(new_brightness, 0.0)  # Ensure brightness does not go below 0.0
+
+        self.global_key_brightness = new_brightness
+        return new_brightness
+
+
+display_manager = DisplayManager(initial_brightness=0.1)
 
 while True:
     update_debouncers(debouncers_param=debouncers, neokey_param=neokey)
     check_buttons(debouncers_param=debouncers, neokey_param=neokey, colors_param=colors, macropad_param=macropad)
-    neokey.pixels.brightness = GLOBAL_KEY_BRIGHTNESS * 0.05
+    neokey.pixels.brightness = display_manager.global_key_brightness
 
     last_move_time = animate_label(label_to_animate_param=label_to_animate, last_move_time_param=last_move_time,
                                    macropad_param=macropad)
+    #
+    # print(f"sleep_time: {sleep_time}")
+    # print(f"global_start_time: {global_start_time}")
+    display_manager.manage_sleep_logic(start_time=global_start_time,
+                                       sleep_time_param=sleep_time,
+                                       macropad_param=macropad, neokey_param=neokey)
 
-    current_time = manage_sleep_logic(start_time=global_start_time, sleep_time_param=sleep_time)
+    # print(f"global_start_time: {global_start_time}")
 
     # Read encoder position. If it's changed, switch apps.
     position = macropad.encoder
@@ -405,7 +428,8 @@ while True:
         apps[app_index].switch()
         last_position = position
 
-        global_start_time = wake_display()
+        global_start_time = display_manager.wake_display(macropad_param=macropad)
+        # print(f"encoder global_start_time: {global_start_time}")
 
     # Handle encoder button. If state has changed, and if there's a
     # corresponding macro, set up variables to act on this just like
@@ -413,7 +437,8 @@ while True:
     macropad.encoder_switch_debounced.update()
     encoder_switch = macropad.encoder_switch_debounced.pressed
     if encoder_switch != last_encoder_switch:
-        global_start_time = wake_display()
+        global_start_time = display_manager.wake_display(macropad_param=macropad)
+        # print(f"encoder switch global_start_time: {global_start_time}")
 
         last_encoder_switch = encoder_switch
         if len(apps[app_index].macros) < 13:
@@ -432,8 +457,9 @@ while True:
     # are avoided by 'continue' statements above which resume the loop.
 
     sequence = apps[app_index].macros[key_number][2]
-    print(f"good {sequence}")
-    GLOBAL_KEY_BRIGHTNESS, global_start_time = execute_sequence(pressed_param=pressed, sequence_param=sequence,
-                                                                macropad_param=macropad,
-                                                                max_brightness=GLOBAL_KEY_BRIGHTNESS,
-                                                                start_time=global_start_time)
+    global_start_time = execute_sequence(pressed_param=pressed, sequence_param=sequence,
+                                         macropad_param=macropad,
+                                         max_brightness=global_key_brightness,
+                                         start_time=global_start_time,
+                                         display_manager_param=display_manager)
+    # print(f" popo global_start_time: {global_start_time}")
