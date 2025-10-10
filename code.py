@@ -513,7 +513,7 @@ def handle_neokey_buttons(debouncers, neokey_manager, macropad):
 
 
 def execute_macro_sequence(sequence, pressed, key_number, macropad,
-                           display_manager, apps, app_index):
+                           display_manager, apps, app_index, neokey_manager=None):
     """Execute a macro key sequence.
 
     Args:
@@ -524,6 +524,7 @@ def execute_macro_sequence(sequence, pressed, key_number, macropad,
         display_manager: DisplayManager instance.
         apps: List of all App instances.
         app_index: Current app index.
+        neokey_manager: Optional NeoKeyManager instance.
 
     Returns:
         Updated activity timestamp.
@@ -549,7 +550,7 @@ def execute_macro_sequence(sequence, pressed, key_number, macropad,
                     elif isinstance(code, float):
                         time.sleep(code)
             elif isinstance(item, dict):
-                handle_special_macro(item, macropad, display_manager)
+                handle_special_macro(item, macropad, display_manager, neokey_manager)
     else:
         # Release pressed keys/buttons
         for item in sequence:
@@ -570,13 +571,14 @@ def execute_macro_sequence(sequence, pressed, key_number, macropad,
     return start_time
 
 
-def handle_special_macro(item, macropad, display_manager):
+def handle_special_macro(item, macropad, display_manager, neokey_manager=None):
     """Handle special macro commands (brightness, etc).
 
     Args:
         item: Dictionary with special commands.
         macropad: MacroPad instance.
         display_manager: DisplayManager instance.
+        neokey_manager: Optional NeoKeyManager instance.
     """
     if "test_string" not in item:
         return
@@ -584,9 +586,9 @@ def handle_special_macro(item, macropad, display_manager):
     command = item["test_string"]
 
     if "increase_brightness" in command:
-        display_manager.adjust_brightness(0.1, macropad)
+        display_manager.adjust_brightness(0.1, macropad, neokey_manager)
     elif "decrease_brightness" in command:
-        display_manager.adjust_brightness(-0.1, macropad)
+        display_manager.adjust_brightness(-0.1, macropad, neokey_manager)
 
 
 # INITIALIZATION -----------------------
@@ -688,5 +690,5 @@ while True:
     sequence = apps[app_index].macros[key_number][2]
     activity_time = execute_macro_sequence(
         sequence, pressed, key_number, macropad,
-        display_manager, apps, app_index
+        display_manager, apps, app_index, neokey_manager
     )
