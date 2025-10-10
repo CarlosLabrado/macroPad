@@ -38,10 +38,19 @@ except ImportError:
 
 # CONFIGURABLES ------------------------
 MACRO_FOLDER = "/macros"
-INITIAL_BRIGHTNESS = 0.1
+INITIAL_LED_BRIGHTNESS = 0.1
+INITIAL_SCREEN_BRIGHTNESS = 0.0  # OLED brightness (0.0 = dim, 1.0 = bright)
 SLEEP_TIME = 60 * 60  # 1 hour in seconds
 NEOKEY_ADDR = 0x30
 NEOKEY_RECONNECT_INTERVAL = 5.0
+
+# Preset brightness modes
+NORMAL_LED_BRIGHTNESS = 0.1
+NORMAL_SCREEN_BRIGHTNESS = 0.0
+NIGHT_LED_BRIGHTNESS = 0.01
+NIGHT_SCREEN_BRIGHTNESS = 0.0
+OFF_LED_BRIGHTNESS = 0.0
+OFF_SCREEN_BRIGHTNESS = 0.0
 
 # NeoKey1x4 Constants
 _NEOKEY1X4_NEOPIX_PIN = const(3)
@@ -244,17 +253,20 @@ class DisplayManager:
     """Manages display sleep/wake and brightness.
 
     Attributes:
-        brightness: Current brightness level (0.0-1.0).
+        led_brightness: Current LED brightness level (0.0-1.0).
+        screen_brightness: Current OLED brightness level (0.0-1.0).
         is_asleep: Whether display is currently asleep.
     """
 
-    def __init__(self, initial_brightness):
+    def __init__(self, initial_led_brightness, initial_screen_brightness):
         """Initialize display manager.
 
         Args:
-            initial_brightness: Starting brightness (0.0-1.0).
+            initial_led_brightness: Starting LED brightness (0.0-1.0).
+            initial_screen_brightness: Starting screen brightness (0.0-1.0).
         """
-        self.brightness = initial_brightness
+        self.led_brightness = initial_led_brightness
+        self.screen_brightness = initial_screen_brightness
         self.is_asleep = False
 
     def wake_display(self, macropad, neokey_manager=None):
@@ -270,13 +282,14 @@ class DisplayManager:
         if self.is_asleep:
             print("Waking display")
             macropad.display_sleep = False
-            macropad.pixels.brightness = self.brightness
+            macropad.display.brightness = self.screen_brightness
+            macropad.pixels.brightness = self.led_brightness
             macropad.pixels.show()
             macropad.display.refresh()
             self.is_asleep = False
 
             if neokey_manager:
-                neokey_manager.set_brightness(self.brightness)
+                neokey_manager.set_brightness(self.led_brightness)
                 if not neokey_manager.is_connected:
                     neokey_manager._try_reconnect()
 
@@ -313,8 +326,8 @@ class DisplayManager:
         if elapsed >= sleep_timeout and not self.is_asleep:
             self.sleep_display(macropad, neokey_manager)
 
-    def adjust_brightness(self, delta, macropad, neokey_manager=None):
-        """Adjust brightness up or down.
+    def adjust_led_brightness(self, delta, macropad, neokey_manager=None):
+        """Adjust LED brightness up or down.
 
         Args:
             delta: Amount to change brightness (can be negative).
@@ -324,16 +337,91 @@ class DisplayManager:
         Returns:
             New brightness value.
         """
-        self.brightness = max(0.0, min(1.0, self.brightness + delta))
-        print(f"Brightness: {self.brightness:.2f}")
+        self.led_brightness = max(0.0, min(1.0, self.led_brightness + delta))
+        print(f"LED Brightness: {self.led_brightness:.2f}")
 
-        macropad.pixels.brightness = self.brightness
+        macropad.pixels.brightness = self.led_brightness
         macropad.pixels.show()
 
         if neokey_manager:
-            neokey_manager.set_brightness(self.brightness)
+            neokey_manager.set_brightness(self.led_brightness)
 
-        return self.brightness
+        return self.led_brightness
+
+    def adjust_screen_brightness(self, delta, macropad):
+        """Adjust OLED screen brightness up or down.
+
+        Args:
+            delta: Amount to change brightness (can be negative).
+            macropad: MacroPad instance.
+
+        Returns:
+            New brightness value.
+        """
+        self.screen_brightness = max(0.0, min(1.0, self.screen_brightness + delta))
+        print(f"Screen Brightness: {self.screen_brightness:.2f}")
+
+        macropad.display.brightness = self.screen_brightness
+        macropad.display.refresh()
+
+        return self.screen_brightness
+
+    def set_normal_mode(self, macropad, neokey_manager=None):
+        """Set normal brightness mode.
+
+        Args:
+            macropad: MacroPad instance.
+            neokey_manager: Optional NeoKeyManager instance.
+        """
+        print("Setting NORMAL mode")
+        self.led_brightness = NORMAL_LED_BRIGHTNESS
+        self.screen_brightness = NORMAL_SCREEN_BRIGHTNESS
+
+        macropad.pixels.brightness = self.led_brightness
+        macropad.pixels.show()
+        macropad.display.brightness = self.screen_brightness
+        macropad.display.refresh()
+
+        if neokey_manager:
+            neokey_manager.set_brightness(self.led_brightness)
+
+    def set_night_mode(self, macropad, neokey_manager=None):
+        """Set night brightness mode (very dim).
+
+        Args:
+            macropad: MacroPad instance.
+            neokey_manager: Optional NeoKeyManager instance.
+        """
+        print("Setting NIGHT mode")
+        self.led_brightness = NIGHT_LED_BRIGHTNESS
+        self.screen_brightness = NIGHT_SCREEN_BRIGHTNESS
+
+        macropad.pixels.brightness = self.led_brightness
+        macropad.pixels.show()
+        macropad.display.brightness = self.screen_brightness
+        macropad.display.refresh()
+
+        if neokey_manager:
+            neokey_manager.set_brightness(self.led_brightness)
+
+    def set_off_mode(self, macropad, neokey_manager=None):
+        """Turn off all LEDs and screen.
+
+        Args:
+            macropad: MacroPad instance.
+            neokey_manager: Optional NeoKeyManager instance.
+        """
+        print("Setting OFF mode")
+        self.led_brightness = OFF_LED_BRIGHTNESS
+        self.screen_brightness = OFF_SCREEN_BRIGHTNESS
+
+        macropad.pixels.brightness = self.led_brightness
+        macropad.pixels.show()
+        macropad.display.brightness = self.screen_brightness
+        macropad.display.refresh()
+
+        if neokey_manager:
+            neokey_manager.set_brightness(self.led_brightness)
 
 
 class App:
@@ -572,7 +660,7 @@ def execute_macro_sequence(sequence, pressed, key_number, macropad,
 
 
 def handle_special_macro(item, macropad, display_manager, neokey_manager=None):
-    """Handle special macro commands (brightness, etc).
+    """Handle special macro commands (brightness, modes, etc).
 
     Args:
         item: Dictionary with special commands.
@@ -585,10 +673,25 @@ def handle_special_macro(item, macropad, display_manager, neokey_manager=None):
 
     command = item["test_string"]
 
+    # LED brightness controls (both MacroPad and NeoKey)
     if "increase_brightness" in command:
-        display_manager.adjust_brightness(0.1, macropad, neokey_manager)
+        display_manager.adjust_led_brightness(0.1, macropad, neokey_manager)
     elif "decrease_brightness" in command:
-        display_manager.adjust_brightness(-0.1, macropad, neokey_manager)
+        display_manager.adjust_led_brightness(-0.1, macropad, neokey_manager)
+
+    # Screen brightness controls (OLED only)
+    elif "increase_screen_brightness" in command:
+        display_manager.adjust_screen_brightness(0.1, macropad)
+    elif "decrease_screen_brightness" in command:
+        display_manager.adjust_screen_brightness(-0.1, macropad)
+
+    # Preset modes
+    elif "normal_mode" in command:
+        display_manager.set_normal_mode(macropad, neokey_manager)
+    elif "night_mode" in command:
+        display_manager.set_night_mode(macropad, neokey_manager)
+    elif "off_mode" in command:
+        display_manager.set_off_mode(macropad, neokey_manager)
 
 
 # INITIALIZATION -----------------------
@@ -597,13 +700,13 @@ print("Initializing MacroPad...")
 macropad = MacroPad()
 macropad.display.auto_refresh = False
 macropad.pixels.auto_write = False
-macropad.display.brightness = 0.0
-macropad.pixels.brightness = INITIAL_BRIGHTNESS
+macropad.display.brightness = INITIAL_SCREEN_BRIGHTNESS
+macropad.pixels.brightness = INITIAL_LED_BRIGHTNESS
 
 # Initialize NeoKey with resilience
 print("Initializing NeoKey...")
 i2c_bus = board.I2C()
-neokey_manager = NeoKeyManager(i2c_bus, brightness=INITIAL_BRIGHTNESS * 0.1)
+neokey_manager = NeoKeyManager(i2c_bus, brightness=INITIAL_LED_BRIGHTNESS * 0.1)
 
 # Set up display
 group = setup_display(macropad)
@@ -620,7 +723,7 @@ if not apps:
         pass
 
 # Initialize state
-display_manager = DisplayManager(INITIAL_BRIGHTNESS)
+display_manager = DisplayManager(INITIAL_LED_BRIGHTNESS, INITIAL_SCREEN_BRIGHTNESS)
 neokey_debouncers = [Debouncer() for _ in range(4)]
 
 last_position = None
