@@ -145,7 +145,7 @@ class NeoKeyManager:
             self._failed_reads = 0
             print(f"NeoKey connected at {hex(self.addr)}")
             return True
-        except (OSError, RuntimeError) as e:
+        except (OSError, RuntimeError, ValueError) as e:
             self.is_connected = False
             self.device = None
             print(f"NeoKey connection failed: {e}")
@@ -173,7 +173,7 @@ class NeoKeyManager:
             keys = self.device.get_keys()
             self._failed_reads = 0
             return keys
-        except (OSError, RuntimeError) as e:
+        except (OSError, RuntimeError, ValueError) as e:
             self._failed_reads += 1
             if self._failed_reads >= 3:
                 print(f"NeoKey read failed, marking disconnected: {e}")
@@ -192,7 +192,7 @@ class NeoKeyManager:
 
         try:
             self.device.pixels[index] = color
-        except (OSError, RuntimeError):
+        except (OSError, RuntimeError, ValueError):
             pass  # Silently fail for LED operations
 
     def set_brightness(self, brightness):
@@ -205,7 +205,7 @@ class NeoKeyManager:
         if self.is_connected and self.device:
             try:
                 self.device.pixels.brightness = brightness
-            except (OSError, RuntimeError):
+            except (OSError, RuntimeError, ValueError):
                 pass
 
 
