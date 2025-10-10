@@ -361,6 +361,8 @@ class DisplayManager:
         self.screen_brightness = max(0.0, min(1.0, self.screen_brightness + delta))
         print(f"Screen Brightness: {self.screen_brightness:.2f}")
 
+        # Ensure display is on when adjusting brightness
+        macropad.display_sleep = False
         macropad.display.brightness = self.screen_brightness
         macropad.display.refresh()
 
@@ -376,6 +378,9 @@ class DisplayManager:
         print("Setting NORMAL mode")
         self.led_brightness = NORMAL_LED_BRIGHTNESS
         self.screen_brightness = NORMAL_SCREEN_BRIGHTNESS
+
+        # Ensure display is on
+        macropad.display_sleep = False
 
         macropad.pixels.brightness = self.led_brightness
         macropad.pixels.show()
@@ -396,6 +401,9 @@ class DisplayManager:
         self.led_brightness = NIGHT_LED_BRIGHTNESS
         self.screen_brightness = NIGHT_SCREEN_BRIGHTNESS
 
+        # Ensure display is on
+        macropad.display_sleep = False
+
         macropad.pixels.brightness = self.led_brightness
         macropad.pixels.show()
         macropad.display.brightness = self.screen_brightness
@@ -415,13 +423,25 @@ class DisplayManager:
         self.led_brightness = OFF_LED_BRIGHTNESS
         self.screen_brightness = OFF_SCREEN_BRIGHTNESS
 
+        # Turn off LEDs
         macropad.pixels.brightness = self.led_brightness
         macropad.pixels.show()
-        macropad.display.brightness = self.screen_brightness
-        macropad.display.refresh()
+
+        # Actually turn off the display (not just dim it)
+        macropad.display_sleep = True
 
         if neokey_manager:
             neokey_manager.set_brightness(self.led_brightness)
+
+    def turn_display_on(self, macropad):
+        """Turn the display back on (wake from display_sleep).
+
+        Args:
+            macropad: MacroPad instance.
+        """
+        macropad.display_sleep = False
+        macropad.display.brightness = self.screen_brightness
+        macropad.display.refresh()
 
 
 class App:

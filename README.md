@@ -38,7 +38,7 @@ CIRCUITPY/
     ├── adafruit_seesaw/
     └── ...
 ```
-
+![img.png](docs/img.png)
 ## Creating Macro Files
 
 Each macro file in `/macros` defines one "app" - a set of 12 key bindings plus an optional encoder button binding.
@@ -151,16 +151,20 @@ The system has **independent brightness controls**:
 - Controls only the OLED display brightness
 - Range: 0.0 (dim) to 1.0 (bright)
 - **Note:** Even at 0.0, the OLED is still visible (just very dim)
+- To completely turn off the display, use "Off Mode" preset
 - Controlled via `increase_screen_brightness` / `decrease_screen_brightness` commands
+- Adjusting screen brightness automatically turns the display back on if it was off
 
 ### Preset Modes
 Quick shortcuts to common brightness configurations:
 
-| Mode | LED Brightness | Screen Brightness | Use Case |
-|------|----------------|-------------------|----------|
-| Normal | 0.1 | 0.0 | Default, everyday use |
-| Night | 0.01 | 0.0 | Dark room, minimal light |
-| Off | 0.0 | 0.0 | Completely dark |
+| Mode | LED Brightness | Screen Brightness | Display Power | Use Case |
+|------|----------------|-------------------|---------------|----------|
+| Normal | 0.1 | 0.0 | On | Default, everyday use |
+| Night | 0.01 | 0.0 | On | Dark room, minimal light |
+| Off | 0.0 | 0.0 | **Off** | Completely dark (display actually turns off) |
+
+**Note:** Off Mode uses `display_sleep = True` to completely turn off the OLED, not just dim it. Press any other mode or adjust screen brightness to turn it back on.
 
 Access these modes through the "Configuration" app or bind to any key.
 
@@ -214,6 +218,15 @@ App                     - Represents one macro application
 - On wake from sleep, force immediate reconnect attempt
 
 ## Troubleshooting
+
+### Display won't turn on after Off Mode
+
+If the display stays off after pressing Off mode:
+1. Press any of the preset mode buttons (Normal or Night)
+2. Or press Screen+ / Screen- to adjust brightness (automatically turns display on)
+3. Or rotate the encoder to switch apps (triggers wake)
+
+**Note:** Off Mode is different from automatic sleep - it explicitly turns off the display using `display_sleep = True`. Any mode change or brightness adjustment will turn it back on.
 
 ### NeoKey shows [!] indicator
 
