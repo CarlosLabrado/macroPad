@@ -22,21 +22,57 @@ app = {  # REQUIRED dict, must be named 'app'
     "macros": [  # List of button macros...
         # COLOR    LABEL    KEY SEQUENCE
         # 1st row ----------
-        (0x003366, "Screen", [Keycode.GUI, Keycode.LEFT_SHIFT, Keycode.S]),  # Darker blue
+        (
+            0x003366,
+            "Screen",
+            [Keycode.GUI, Keycode.LEFT_SHIFT, Keycode.S],
+        ),  # Darker blue
         (0x003399, "RDPm", [Keycode.LEFT_CONTROL, Keycode.LEFT_ALT, Keycode.HOME]),
         (0x0033CC, "CitrixM", [Keycode.LEFT_CONTROL, Keycode.LEFT_ALT, Keycode.PAUSE]),
         # 2nd row ----------
         (0x0033FF, "HDR", [Keycode.GUI, Keycode.LEFT_ALT, Keycode.B]),  # Blue
-        (0x0066FF, "Audio", [Keycode.GUI, Keycode.LEFT_CONTROL, Keycode.V]),  # Light blue
-        (0x0099FF, "Fancy", [Keycode.LEFT_ALT, Keycode.LEFT_SHIFT, Keycode.GRAVE_ACCENT]),  # Lighter blue
+        (
+            0x0066FF,
+            "Audio",
+            [Keycode.GUI, Keycode.LEFT_CONTROL, Keycode.V],
+        ),  # Light blue
+        (
+            0x0099FF,
+            "Fancy",
+            [Keycode.LEFT_ALT, Keycode.LEFT_SHIFT, Keycode.GRAVE_ACCENT],
+        ),  # Lighter blue
         # 3rd row ----------
-        (0x00CCFF, "Chat",  [Keycode.LEFT_CONTROL, Keycode.LEFT_ALT, Keycode.LEFT_SHIFT, Keycode.J]),
-        (0x00FFFF, "FullS",  [Keycode.LEFT_CONTROL, Keycode.LEFT_ALT, Keycode.LEFT_SHIFT, Keycode.F]),  # Cyan, for variety
-        (0x33FFFF, "Pause",  [Keycode.LEFT_CONTROL, Keycode.LEFT_ALT, Keycode.LEFT_SHIFT, Keycode.G]),
+        (
+            0x00CCFF,
+            "Chat",
+            [Keycode.LEFT_CONTROL, Keycode.LEFT_ALT, Keycode.LEFT_SHIFT, Keycode.J],
+        ),
+        (
+            0x00FFFF,
+            "FullS",
+            [Keycode.LEFT_CONTROL, Keycode.LEFT_ALT, Keycode.LEFT_SHIFT, Keycode.F],
+        ),  # Cyan, for variety
+        (
+            0x33FFFF,
+            "Pause",
+            [Keycode.LEFT_CONTROL, Keycode.LEFT_ALT, Keycode.LEFT_SHIFT, Keycode.G],
+        ),
         # 4th row ----------
-        (0x66FFFF, "Video", [Keycode.LEFT_CONTROL, Keycode.LEFT_ALT, Keycode.LEFT_SHIFT, Keycode.B]),
-        (0x99FFFF, "Share", [Keycode.LEFT_CONTROL, Keycode.LEFT_ALT, Keycode.LEFT_SHIFT, Keycode.S]),
-        (0xCCFFFF, "Mute", [Keycode.LEFT_CONTROL, Keycode.LEFT_ALT, Keycode.LEFT_SHIFT, Keycode.A]),  # Very light blue
+        (
+            0x66FFFF,
+            "Video",
+            [Keycode.LEFT_CONTROL, Keycode.LEFT_ALT, Keycode.LEFT_SHIFT, Keycode.B],
+        ),
+        (
+            0x99FFFF,
+            "Share",
+            [Keycode.LEFT_CONTROL, Keycode.LEFT_ALT, Keycode.LEFT_SHIFT, Keycode.S],
+        ),
+        (
+            0xCCFFFF,
+            "Mute",
+            [Keycode.LEFT_CONTROL, Keycode.LEFT_ALT, Keycode.LEFT_SHIFT, Keycode.A],
+        ),  # Very light blue
         # Encoder button ---
         (0x000000, "", [Keycode.CAPS_LOCK]),
     ],

@@ -30,17 +30,45 @@ app = {  # REQUIRED dict, must be named 'app'
         ),
         (0x170068, "VFZ", [Keycode.GUI, Keycode.LEFT_SHIFT, Keycode.BACKSLASH]),
         # 2nd row ----------
-        (0x22005C, "Up", [Keycode.GUI, Keycode.LEFT_CONTROL, Keycode.LEFT_SHIFT, Keycode.F7]),
+        (
+            0x22005C,
+            "Up",
+            [Keycode.GUI, Keycode.LEFT_CONTROL, Keycode.LEFT_SHIFT, Keycode.F7],
+        ),
         (0x2E0051, "Audio", [Keycode.GUI, Keycode.LEFT_CONTROL, Keycode.V]),
-        (0x390045, "Vol+", [Keycode.GUI, Keycode.LEFT_CONTROL, Keycode.LEFT_SHIFT, Keycode.F6]),
+        (
+            0x390045,
+            "Vol+",
+            [Keycode.GUI, Keycode.LEFT_CONTROL, Keycode.LEFT_SHIFT, Keycode.F6],
+        ),
         # 3rd row ----------
-        (0x51002E, "Down", [Keycode.GUI, Keycode.LEFT_CONTROL, Keycode.LEFT_SHIFT, Keycode.F5]),
+        (
+            0x51002E,
+            "Down",
+            [Keycode.GUI, Keycode.LEFT_CONTROL, Keycode.LEFT_SHIFT, Keycode.F5],
+        ),
         (0x51002E, "Mute", [[ConsumerControlCode.MUTE]]),
-        (0x51002E, "Vol-", [Keycode.GUI, Keycode.LEFT_CONTROL, Keycode.LEFT_SHIFT, Keycode.F4]),
+        (
+            0x51002E,
+            "Vol-",
+            [Keycode.GUI, Keycode.LEFT_CONTROL, Keycode.LEFT_SHIFT, Keycode.F4],
+        ),
         # 4th row ----------
-        (0x51002E, "<<", [Keycode.GUI, Keycode.LEFT_CONTROL, Keycode.LEFT_SHIFT, Keycode.F3]),
-        (0x51002E, "Play", [Keycode.GUI, Keycode.LEFT_CONTROL, Keycode.LEFT_SHIFT, Keycode.F2]),
-        (0x51002E, ">>", [Keycode.GUI, Keycode.LEFT_CONTROL, Keycode.LEFT_SHIFT, Keycode.F1]),
+        (
+            0x51002E,
+            "<<",
+            [Keycode.GUI, Keycode.LEFT_CONTROL, Keycode.LEFT_SHIFT, Keycode.F3],
+        ),
+        (
+            0x51002E,
+            "Play",
+            [Keycode.GUI, Keycode.LEFT_CONTROL, Keycode.LEFT_SHIFT, Keycode.F2],
+        ),
+        (
+            0x51002E,
+            ">>",
+            [Keycode.GUI, Keycode.LEFT_CONTROL, Keycode.LEFT_SHIFT, Keycode.F1],
+        ),
         # Encoder button ---
         (0x000000, "", [Keycode.CAPS_LOCK]),
     ],

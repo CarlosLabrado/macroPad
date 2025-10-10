@@ -1,17 +1,20 @@
 # SPDX-FileCopyrightText: 2021 Phillip Burgess for Adafruit Industries
-#
 # SPDX-License-Identifier: MIT
 
 """
-A macro/hotkey program for Adafruit MACROPAD. Macro setups are stored in the
-/macros folder (configurable below), load up just the ones you're likely to
-use. Plug into computer's USB port, use dial to select an application macro
-set, press MACROPAD keys to send key sequences and other USB protocols.
+A macro/hotkey program for Adafruit MACROPAD with NeoKey1x4 extension.
+
+Macro setups are stored in the /macros folder. Use the dial to select an
+application macro set, press MACROPAD keys to send key sequences.
+
+Features:
+- Automatic sleep/wake for display and LEDs
+- Brightness control via macros
+- Resilient NeoKey1x4 connection with auto-reconnection
+- Scrolling application name display
 """
 
 # pylint: disable=import-error, unused-import, too-few-public-methods
-
-## IMPORTANT we are using circuitpython 8x
 
 import os
 import time
@@ -23,36 +26,53 @@ from adafruit_macropad import MacroPad
 import board
 from adafruit_hid.keycode import Keycode
 from adafruit_hid.consumer_control_code import ConsumerControlCode
-
-# CONFIGURABLES ------------------------
-
-MACRO_FOLDER = "/macros"
-global_key_brightness = 0.1
-
 from micropython import const
 from adafruit_seesaw import neopixel
 from adafruit_seesaw.seesaw import Seesaw
 
 try:
-    import typing  # pylint: disable=unused-import
+    import typing
     from busio import I2C
 except ImportError:
     pass
 
-_NEOKEY1X4_ADDR = const(0x30)
+# CONFIGURABLES ------------------------
+MACRO_FOLDER = "/macros"
+INITIAL_LED_BRIGHTNESS = 0.1
+INITIAL_SCREEN_BRIGHTNESS = 0.0  # OLED brightness (0.0 = dim, 1.0 = bright)
+SLEEP_TIME = 60 * 60  # 1 hour in seconds
+NEOKEY_ADDR = 0x30
+NEOKEY_RECONNECT_INTERVAL = 5.0
 
+# Preset brightness modes
+NORMAL_LED_BRIGHTNESS = 0.1
+NORMAL_SCREEN_BRIGHTNESS = 0.0
+NIGHT_LED_BRIGHTNESS = 0.01
+NIGHT_SCREEN_BRIGHTNESS = 0.0
+OFF_LED_BRIGHTNESS = 0.0
+OFF_SCREEN_BRIGHTNESS = 0.0
+
+# NeoKey1x4 Constants
 _NEOKEY1X4_NEOPIX_PIN = const(3)
-
-_NEOKEY1X4_NUM_ROWS = const(1)
-_NEOKEY1X4_NUM_COLS = const(4)
 _NEOKEY1X4_NUM_KEYS = const(4)
 
 
 class NeoKey1x4(Seesaw):
-    """Driver for the Adafruit NeoKey 1x4."""
+    """Driver for the Adafruit NeoKey 1x4.
+
+    Args:
+        i2c_bus: I2C bus instance.
+        interrupt: Enable interrupt mode. Default is False.
+        addr: I2C address. Default is 0x30.
+        brightness: NeoPixel brightness (0.0-1.0). Default is 0.01.
+    """
 
     def __init__(
-            self, i2c_bus: I2C, interrupt: bool = False, addr: int = _NEOKEY1X4_ADDR, brightness: float = 0.01
+        self,
+        i2c_bus: I2C,
+        interrupt: bool = False,
+        addr: int = NEOKEY_ADDR,
+        brightness: float = 0.01,
     ) -> None:
         super().__init__(i2c_bus, addr)
         self.interrupt_enabled = interrupt
@@ -63,61 +83,405 @@ class NeoKey1x4(Seesaw):
             brightness=brightness,
             pixel_order=neopixel.GRB,
         )
-        # set the pins to inputs, pullups
+        # Set pins 4-7 to inputs with pullups
         for b in range(4, 8):
             self.pin_mode(b, self.INPUT_PULLUP)
 
     def __getitem__(self, index: int) -> bool:
+        """Read a single key state.
+
+        Args:
+            index: Key index (0-3).
+
+        Returns:
+            True if key is pressed, False otherwise.
+
+        Raises:
+            RuntimeError: If index is out of range.
+        """
         if not isinstance(index, int) or (index < 0) or (index > 3):
             raise RuntimeError("Index must be 0 thru 3")
         return not self.digital_read(index + 4)
 
     def get_keys(self) -> typing.List[bool]:
-        """Read all 4 keys at once and return an array of booleans.
+        """Read all 4 keys at once.
 
         Returns:
-            typing.List[bool]: _description_
+            List of 4 boolean values, one per key.
         """
-        # use a bit mask with ports 4-7 to read all 4 keys at once
         bulk_read = self.digital_read_bulk(0xF0)
-
-        # convert the leftmost 4 bits to an array of booleans and return
         keys = [bulk_read & (1 << i) == 0 for i in range(4, 8)]
         return keys
 
 
-# Initialize the NeoKey object
-i2c_bus = board.I2C()
-neokey = NeoKey1x4(i2c_bus, addr=0x30, brightness=global_key_brightness * 0.1)
+class NeoKeyManager:
+    """Manages NeoKey1x4 connection with automatic reconnection.
+
+    Attributes:
+        i2c_bus: I2C bus instance.
+        addr: I2C address of the NeoKey.
+        brightness: Current brightness level.
+        is_connected: Connection status.
+    """
+
+    def __init__(self, i2c_bus, addr=NEOKEY_ADDR, brightness=0.01):
+        """Initialize NeoKey manager.
+
+        Args:
+            i2c_bus: I2C bus instance from board.I2C().
+            addr: I2C address. Default is 0x30.
+            brightness: Initial brightness. Default is 0.01.
+        """
+        self.i2c_bus = i2c_bus
+        self.addr = addr
+        self.brightness = brightness
+        self.device = None
+        self.is_connected = False
+        self._last_reconnect = 0
+        self._failed_reads = 0
+
+        self._connect()
+
+    def _connect(self):
+        """Attempt to connect to the NeoKey device.
+
+        Returns:
+            True if connection successful, False otherwise.
+        """
+        try:
+            self.device = NeoKey1x4(
+                self.i2c_bus, addr=self.addr, brightness=self.brightness
+            )
+            self.is_connected = True
+            self._failed_reads = 0
+            print(f"NeoKey connected at {hex(self.addr)}")
+            return True
+        except (OSError, RuntimeError, ValueError) as e:
+            self.is_connected = False
+            self.device = None
+            print(f"NeoKey connection failed: {e}")
+            return False
+
+    def _try_reconnect(self):
+        """Attempt reconnection with rate limiting."""
+        current_time = time.time()
+        if current_time - self._last_reconnect >= NEOKEY_RECONNECT_INTERVAL:
+            self._last_reconnect = current_time
+            print("Attempting NeoKey reconnection...")
+            self._connect()
+
+    def get_keys(self):
+        """Safely read all key states.
+
+        Returns:
+            List of 4 boolean values, or all False if disconnected.
+        """
+        if not self.is_connected:
+            self._try_reconnect()
+            return [False, False, False, False]
+
+        try:
+            keys = self.device.get_keys()
+            self._failed_reads = 0
+            return keys
+        except (OSError, RuntimeError, ValueError) as e:
+            self._failed_reads += 1
+            if self._failed_reads >= 3:
+                print(f"NeoKey read failed, marking disconnected: {e}")
+                self.is_connected = False
+            return [False, False, False, False]
+
+    def set_pixel(self, index, color):
+        """Safely set a pixel color.
+
+        Args:
+            index: Pixel index (0-3).
+            color: RGB color as integer (0xRRGGBB).
+        """
+        if not self.is_connected or not self.device:
+            return
+
+        try:
+            self.device.pixels[index] = color
+        except (OSError, RuntimeError, ValueError):
+            pass  # Silently fail for LED operations
+
+    def set_brightness(self, brightness):
+        """Safely set brightness.
+
+        Args:
+            brightness: Brightness level (0.0-1.0).
+        """
+        self.brightness = brightness
+        if self.is_connected and self.device:
+            try:
+                self.device.pixels.brightness = brightness
+            except (OSError, RuntimeError, ValueError):
+                pass
+
+
+class Debouncer:
+    """Simple button debouncer.
+
+    Attributes:
+        state: Current button state.
+        last_state: Previous button state.
+    """
+
+    def __init__(self):
+        """Initialize debouncer with False state."""
+        self.state = False
+        self.last_state = False
+
+    def update(self, new_state):
+        """Update debouncer state.
+
+        Args:
+            new_state: New button state.
+        """
+        self.last_state = self.state
+        self.state = new_state
+
+    def is_pressed(self):
+        """Check if button was just pressed.
+
+        Returns:
+            True if button transitioned from not pressed to pressed.
+        """
+        return self.state and not self.last_state
+
+
+class DisplayManager:
+    """Manages display sleep/wake and brightness.
+
+    Attributes:
+        led_brightness: Current LED brightness level (0.0-1.0).
+        screen_brightness: Current OLED brightness level (0.0-1.0).
+        is_asleep: Whether display is currently asleep.
+    """
+
+    def __init__(self, initial_led_brightness, initial_screen_brightness):
+        """Initialize display manager.
+
+        Args:
+            initial_led_brightness: Starting LED brightness (0.0-1.0).
+            initial_screen_brightness: Starting screen brightness (0.0-1.0).
+        """
+        self.led_brightness = initial_led_brightness
+        self.screen_brightness = initial_screen_brightness
+        self.is_asleep = False
+
+    def wake_display(self, macropad, neokey_manager=None):
+        """Wake the display and restore brightness.
+
+        Args:
+            macropad: MacroPad instance.
+            neokey_manager: Optional NeoKeyManager instance.
+
+        Returns:
+            Current time as float.
+        """
+        if self.is_asleep:
+            print("Waking display")
+            macropad.display_sleep = False
+            macropad.display.brightness = self.screen_brightness
+            macropad.pixels.brightness = self.led_brightness
+            macropad.pixels.show()
+            macropad.display.refresh()
+            self.is_asleep = False
+
+            if neokey_manager:
+                neokey_manager.set_brightness(self.led_brightness)
+                if not neokey_manager.is_connected:
+                    neokey_manager._try_reconnect()
+
+        return time.time()
+
+    def sleep_display(self, macropad, neokey_manager=None):
+        """Put display to sleep and turn off LEDs.
+
+        Args:
+            macropad: MacroPad instance.
+            neokey_manager: Optional NeoKeyManager instance.
+        """
+        if not self.is_asleep:
+            print("Sleeping display")
+            macropad.display_sleep = True
+            macropad.pixels.brightness = 0.0
+            macropad.pixels.show()
+            macropad.display.refresh()
+            self.is_asleep = True
+
+            if neokey_manager:
+                neokey_manager.set_brightness(0.0)
+
+    def manage_sleep(self, start_time, sleep_timeout, macropad, neokey_manager=None):
+        """Check and manage sleep state based on inactivity.
+
+        Args:
+            start_time: Timestamp of last activity.
+            sleep_timeout: Seconds of inactivity before sleep.
+            macropad: MacroPad instance.
+            neokey_manager: Optional NeoKeyManager instance.
+        """
+        elapsed = time.time() - start_time
+        if elapsed >= sleep_timeout and not self.is_asleep:
+            self.sleep_display(macropad, neokey_manager)
+
+    def adjust_led_brightness(self, delta, macropad, neokey_manager=None):
+        """Adjust LED brightness up or down.
+
+        Args:
+            delta: Amount to change brightness (can be negative).
+            macropad: MacroPad instance.
+            neokey_manager: Optional NeoKeyManager instance.
+
+        Returns:
+            New brightness value.
+        """
+        self.led_brightness = max(0.0, min(1.0, self.led_brightness + delta))
+        print(f"LED Brightness: {self.led_brightness:.2f}")
+
+        macropad.pixels.brightness = self.led_brightness
+        macropad.pixels.show()
+
+        if neokey_manager:
+            neokey_manager.set_brightness(self.led_brightness)
+
+        return self.led_brightness
+
+    def adjust_screen_brightness(self, delta, macropad):
+        """Adjust OLED screen brightness up or down.
+
+        Args:
+            delta: Amount to change brightness (can be negative).
+            macropad: MacroPad instance.
+
+        Returns:
+            New brightness value.
+        """
+        self.screen_brightness = max(0.0, min(1.0, self.screen_brightness + delta))
+        print(f"Screen Brightness: {self.screen_brightness:.2f}")
+
+        # Ensure display is on when adjusting brightness
+        macropad.display_sleep = False
+        macropad.display.brightness = self.screen_brightness
+        macropad.display.refresh()
+
+        return self.screen_brightness
+
+    def set_normal_mode(self, macropad, neokey_manager=None):
+        """Set normal brightness mode.
+
+        Args:
+            macropad: MacroPad instance.
+            neokey_manager: Optional NeoKeyManager instance.
+        """
+        print("Setting NORMAL mode")
+        self.led_brightness = NORMAL_LED_BRIGHTNESS
+        self.screen_brightness = NORMAL_SCREEN_BRIGHTNESS
+
+        # Ensure display is on
+        macropad.display_sleep = False
+
+        macropad.pixels.brightness = self.led_brightness
+        macropad.pixels.show()
+        macropad.display.brightness = self.screen_brightness
+        macropad.display.refresh()
+
+        if neokey_manager:
+            neokey_manager.set_brightness(self.led_brightness)
+
+    def set_night_mode(self, macropad, neokey_manager=None):
+        """Set night brightness mode (very dim).
+
+        Args:
+            macropad: MacroPad instance.
+            neokey_manager: Optional NeoKeyManager instance.
+        """
+        print("Setting NIGHT mode")
+        self.led_brightness = NIGHT_LED_BRIGHTNESS
+        self.screen_brightness = NIGHT_SCREEN_BRIGHTNESS
+
+        # Ensure display is on
+        macropad.display_sleep = False
+
+        macropad.pixels.brightness = self.led_brightness
+        macropad.pixels.show()
+        macropad.display.brightness = self.screen_brightness
+        macropad.display.refresh()
+
+        if neokey_manager:
+            neokey_manager.set_brightness(self.led_brightness)
+
+    def set_off_mode(self, macropad, neokey_manager=None):
+        """Turn off all LEDs and screen.
+
+        Args:
+            macropad: MacroPad instance.
+            neokey_manager: Optional NeoKeyManager instance.
+        """
+        print("Setting OFF mode")
+        self.led_brightness = OFF_LED_BRIGHTNESS
+        self.screen_brightness = OFF_SCREEN_BRIGHTNESS
+
+        # Turn off LEDs
+        macropad.pixels.brightness = self.led_brightness
+        macropad.pixels.show()
+
+        # Actually turn off the display (not just dim it)
+        macropad.display_sleep = True
+
+        if neokey_manager:
+            neokey_manager.set_brightness(self.led_brightness)
+
+    def turn_display_on(self, macropad):
+        """Turn the display back on (wake from display_sleep).
+
+        Args:
+            macropad: MacroPad instance.
+        """
+        macropad.display_sleep = False
+        macropad.display.brightness = self.screen_brightness
+        macropad.display.refresh()
 
 
 class App:
-    """Class representing a host-side application, for which we have a set
-    of macro sequences. Project code was originally more complex and
-    this was helpful, but maybe it's excessive now?"""
+    """Represents a macro application with key bindings.
+
+    Attributes:
+        name: Application name displayed on screen.
+        macros: List of macro definitions for each key.
+    """
 
     def __init__(self, appdata):
-        """
-        Initialize the App instance.
+        """Initialize App from macro file data.
 
-        :param appdata: A dictionary containing the application data.
+        Args:
+            appdata: Dictionary with 'name' and 'macros' keys.
         """
         self.name = appdata["name"]
         self.macros = appdata["macros"]
 
-    def switch(self):
+    def switch(self, macropad, group):
+        """Switch to this application.
+
+        Updates display labels and LED colors for all keys.
+
+        Args:
+            macropad: MacroPad instance.
+            group: DisplayIO group for labels.
         """
-        Activate application settings; update OLED labels and LED
-        colors.
-        """
-        group[13].text = self.name  # Application name
+        group[13].text = self.name
+
         for i in range(12):
-            if i < len(self.macros):  # Key in use, set label + LED color
+            if i < len(self.macros):
                 macropad.pixels[i] = self.macros[i][0]
                 group[i].text = self.macros[i][1]
-            else:  # Key not in use, no label or LED
+            else:
                 macropad.pixels[i] = 0
                 group[i].text = ""
+
         macropad.keyboard.release_all()
         macropad.consumer_control.release()
         macropad.mouse.release_all()
@@ -126,53 +490,25 @@ class App:
         macropad.display.refresh()
 
 
-# INITIALIZATION -----------------------
+def load_apps(macro_folder):
+    """Load all macro applications from folder.
 
-macropad = MacroPad()
-macropad.display.auto_refresh = False
-macropad.pixels.auto_write = False
-macropad.display.brightness = 0.0  # As dim as possible
-macropad.pixels.brightness = global_key_brightness
+    Args:
+        macro_folder: Path to folder containing .py macro files.
 
-# Set up displayio group with all the labels
-group = displayio.Group()
-for key_index in range(12):
-    x = key_index % 3
-    y = key_index // 3
-    group.append(
-        label.Label(
-            terminalio.FONT,
-            text="",
-            color=0xFFFFFF,
-            anchored_position=(
-                (macropad.display.width - 1) * x / 2,
-                macropad.display.height - 1 - (3 - y) * 12,
-            ),
-            anchor_point=(x / 2, 1.0),
-        )
-    )
-group.append(Rect(0, 0, macropad.display.width, 12, fill=0xFFFFFF))
-group.append(
-    label.Label(
-        terminalio.FONT,
-        text="",
-        color=0x000000,
-        anchored_position=(macropad.display.width // 2, -2),
-        anchor_point=(0.5, -0.2),
-    )
-)
-macropad.display.root_group = group
+    Returns:
+        List of App instances.
+    """
+    apps = []
+    files = os.listdir(macro_folder)
+    files.sort()
 
-# Load all the macro key setups from .py files in MACRO_FOLDER
-apps = []
-files = os.listdir(MACRO_FOLDER)
-files.sort()
-for filename in files:
-    if filename.endswith(".py") and not filename.startswith("._"):
-        try:
-            module = __import__(MACRO_FOLDER + "/" + filename[:-3])
-            apps.append(App(module.app))
-        except (
+    for filename in files:
+        if filename.endswith(".py") and not filename.startswith("._"):
+            try:
+                module = __import__(macro_folder + "/" + filename[:-3])
+                apps.append(App(module.app))
+            except (
                 SyntaxError,
                 ImportError,
                 AttributeError,
@@ -180,286 +516,322 @@ for filename in files:
                 NameError,
                 IndexError,
                 TypeError,
-        ) as err:
-            print("ERROR in", filename)
-            import traceback
+            ) as err:
+                print(f"ERROR in {filename}")
+                import traceback
 
-            traceback.print_exception(err, err, err.__traceback__)
+                traceback.print_exception(err, err, err.__traceback__)
+
+    return apps
+
+
+def setup_display(macropad):
+    """Create and configure the display layout.
+
+    Args:
+        macropad: MacroPad instance.
+
+    Returns:
+        DisplayIO group with all labels configured.
+    """
+    group = displayio.Group()
+
+    # Create labels for 12 keys (3x4 grid)
+    for key_index in range(12):
+        x = key_index % 3
+        y = key_index // 3
+        group.append(
+            label.Label(
+                terminalio.FONT,
+                text="",
+                color=0xFFFFFF,
+                anchored_position=(
+                    (macropad.display.width - 1) * x / 2,
+                    macropad.display.height - 1 - (3 - y) * 12,
+                ),
+                anchor_point=(x / 2, 1.0),
+            )
+        )
+
+    # App name background
+    group.append(Rect(0, 0, macropad.display.width, 12, fill=0xFFFFFF))
+
+    # App name label
+    group.append(
+        label.Label(
+            terminalio.FONT,
+            text="",
+            color=0x000000,
+            anchored_position=(macropad.display.width // 2, -2),
+            anchor_point=(0.5, -0.2),
+        )
+    )
+
+    return group
+
+
+def animate_label(label_obj, last_move_time, macropad, speed=5):
+    """Animate label scrolling across screen.
+
+    Args:
+        label_obj: Label object to animate.
+        last_move_time: Timestamp of last movement.
+        macropad: MacroPad instance.
+        speed: Pixels to move per second. Default is 5.
+
+    Returns:
+        Updated last_move_time.
+    """
+    current_time = time.time()
+    if current_time - last_move_time >= 1:
+        label_obj.x += speed
+        if label_obj.x > macropad.display.width:
+            label_obj.x = -label_obj.bounding_box[2]
+        macropad.display.refresh()
+        return current_time
+    return last_move_time
+
+
+def handle_neokey_buttons(debouncers, neokey_manager, macropad):
+    """Process NeoKey button presses.
+
+    Args:
+        debouncers: List of Debouncer instances.
+        neokey_manager: NeoKeyManager instance.
+        macropad: MacroPad instance.
+    """
+    keys = neokey_manager.get_keys()
+
+    # Key mappings: ESC, Vol+, Vol-, Play/Pause
+    key_mapping = [
+        Keycode.ESCAPE,
+        ConsumerControlCode.VOLUME_INCREMENT,
+        ConsumerControlCode.VOLUME_DECREMENT,
+        ConsumerControlCode.PLAY_PAUSE,
+    ]
+
+    color_pressed = 0x800080  # Purple
+
+    for i in range(4):
+        debouncers[i].update(keys[i])
+
+        if debouncers[i].is_pressed():
+            neokey_manager.set_pixel(i, color_pressed)
+
+            if i == 0:  # Keycode (ESC)
+                macropad.keyboard.press(key_mapping[i])
+                macropad.keyboard.release_all()
+            else:  # Consumer control codes
+                macropad.consumer_control.release()
+                macropad.consumer_control.press(key_mapping[i])
+        else:
+            neokey_manager.set_pixel(i, color_pressed)
+
+    macropad.consumer_control.release()
+
+
+def execute_macro_sequence(
+    sequence,
+    pressed,
+    key_number,
+    macropad,
+    display_manager,
+    apps,
+    app_index,
+    neokey_manager=None,
+):
+    """Execute a macro key sequence.
+
+    Args:
+        sequence: List of macro actions (keycodes, delays, strings, dicts).
+        pressed: True if key pressed, False if released.
+        key_number: Index of the key (0-12).
+        macropad: MacroPad instance.
+        display_manager: DisplayManager instance.
+        apps: List of all App instances.
+        app_index: Current app index.
+        neokey_manager: Optional NeoKeyManager instance.
+
+    Returns:
+        Updated activity timestamp.
+    """
+    start_time = time.time()
+
+    if pressed:
+        for item in sequence:
+            if isinstance(item, int):
+                if item >= 0:
+                    macropad.keyboard.press(item)
+                else:
+                    macropad.keyboard.release(-item)
+            elif isinstance(item, float):
+                time.sleep(item)
+            elif isinstance(item, str):
+                macropad.keyboard_layout.write(item)
+            elif isinstance(item, list):
+                for code in item:
+                    if isinstance(code, int):
+                        macropad.consumer_control.release()
+                        macropad.consumer_control.press(code)
+                    elif isinstance(code, float):
+                        time.sleep(code)
+            elif isinstance(item, dict):
+                handle_special_macro(item, macropad, display_manager, neokey_manager)
+    else:
+        # Release pressed keys/buttons
+        for item in sequence:
+            if isinstance(item, int) and item >= 0:
+                macropad.keyboard.release(item)
+            elif isinstance(item, dict):
+                if "buttons" in item and item["buttons"] >= 0:
+                    macropad.mouse.release(item["buttons"])
+                elif "tone" in item:
+                    macropad.stop_tone()
+
+        macropad.consumer_control.release()
+
+        if key_number < 12:
+            macropad.pixels[key_number] = apps[app_index].macros[key_number][0]
+            macropad.pixels.show()
+
+    return start_time
+
+
+def handle_special_macro(item, macropad, display_manager, neokey_manager=None):
+    """Handle special macro commands (brightness, modes, etc).
+
+    Args:
+        item: Dictionary with special commands.
+        macropad: MacroPad instance.
+        display_manager: DisplayManager instance.
+        neokey_manager: Optional NeoKeyManager instance.
+    """
+    if "test_string" not in item:
+        return
+
+    command = item["test_string"]
+
+    # LED brightness controls (both MacroPad and NeoKey)
+    if "increase_brightness" in command:
+        display_manager.adjust_led_brightness(0.1, macropad, neokey_manager)
+    elif "decrease_brightness" in command:
+        display_manager.adjust_led_brightness(-0.1, macropad, neokey_manager)
+
+    # Screen brightness controls (OLED only)
+    elif "increase_screen_brightness" in command:
+        display_manager.adjust_screen_brightness(0.1, macropad)
+    elif "decrease_screen_brightness" in command:
+        display_manager.adjust_screen_brightness(-0.1, macropad)
+
+    # Preset modes
+    elif "normal_mode" in command:
+        display_manager.set_normal_mode(macropad, neokey_manager)
+    elif "night_mode" in command:
+        display_manager.set_night_mode(macropad, neokey_manager)
+    elif "off_mode" in command:
+        display_manager.set_off_mode(macropad, neokey_manager)
+
+
+# INITIALIZATION -----------------------
+
+print("Initializing MacroPad...")
+macropad = MacroPad()
+macropad.display.auto_refresh = False
+macropad.pixels.auto_write = False
+macropad.display.brightness = INITIAL_SCREEN_BRIGHTNESS
+macropad.pixels.brightness = INITIAL_LED_BRIGHTNESS
+
+# Initialize NeoKey with resilience
+print("Initializing NeoKey...")
+i2c_bus = board.I2C()
+neokey_manager = NeoKeyManager(i2c_bus, brightness=INITIAL_LED_BRIGHTNESS * 0.1)
+
+# Set up display
+group = setup_display(macropad)
+macropad.display.root_group = group
+
+# Load macro applications
+print("Loading macro applications...")
+apps = load_apps(MACRO_FOLDER)
 
 if not apps:
-    group[13].text = "NO MACRO FILES FOUND"
+    group[13].text = "NO MACRO FILES"
     macropad.display.refresh()
     while True:
         pass
 
+# Initialize state
+display_manager = DisplayManager(INITIAL_LED_BRIGHTNESS, INITIAL_SCREEN_BRIGHTNESS)
+neokey_debouncers = [Debouncer() for _ in range(4)]
+
 last_position = None
 last_encoder_switch = macropad.encoder_switch_debounced.pressed
 app_index = 0
-apps[app_index].switch()
+apps[app_index].switch(macropad, group)
+
+activity_time = time.time()
+last_animation_time = activity_time
+
+print("Starting main loop...")
 
 # MAIN LOOP ----------------------------
 
-global_start_time = time.time()
-# sleep_time = 60 * 60  # minutes
-sleep_time = 10  # secs
-
-last_move_time = global_start_time
-
-# Get the label
-label_to_animate = group[13]
-
-
-class Debouncer:
-    def __init__(self):
-        self.state = False
-        self.last_state = False
-
-    def update(self, new_state):
-        self.last_state = self.state
-        self.state = new_state
-
-    def is_pressed(self):
-        return self.state and not self.last_state
-
-
-# Create debouncers for each key
-debouncers = [Debouncer() for _ in range(4)]
-
-# Define a list of colors for each key
-colors = [0xFF0000, 0xFFFF00, 0x00FF00, 0x00FFFF]
-
-
-def update_debouncers(debouncers_param, neokey_param):
-    for i in range(4):  # Only for the new keys
-        debouncers_param[i].update(neokey_param[i])
-
-
-def check_buttons(debouncers_param, neokey_param, colors_param, macropad_param):
-    key_mapping = [Keycode.ESCAPE, ConsumerControlCode.VOLUME_INCREMENT, ConsumerControlCode.VOLUME_DECREMENT,
-                   ConsumerControlCode.PLAY_PAUSE]
-    for i in range(4):  # Only for the new keys
-        # There's a different logic for pressing Keycodes and Consumer control codes
-        if debouncers_param[i].is_pressed():
-            neokey_param.pixels[i] = colors_param[i]  # Use the color corresponding to the button
-            if i == 0:
-                macropad_param.keyboard.press(key_mapping[i])  # Press the corresponding key
-                macropad_param.keyboard.release_all()  # Release all keys
-            else:
-                macropad_param.consumer_control.release()
-                macropad_param.consumer_control.press(key_mapping[i])
-        else:
-            neokey_param.pixels[i] = 0xFF0000
-    macropad_param.consumer_control.release()
-
-
-def animate_label(label_to_animate_param, last_move_time_param, macropad_param):
-    inner_current_time = time.time()
-    if inner_current_time - last_move_time_param >= 1:  # 1 second has passed
-        label_to_animate_param.x += 5  # Change this value to control the speed of the animation
-        if label_to_animate_param.x > macropad_param.display.width:
-            label_to_animate_param.x = -label_to_animate_param.bounding_box[2]  # Reset position
-        last_move_time_param = inner_current_time  # Update the move time
-        macropad_param.display.refresh()
-    return last_move_time_param
-
-
-def execute_sequence(pressed_param, sequence_param, macropad_param, max_brightness, start_time, display_manager_param):
-    if pressed_param:
-        start_time = display_manager_param.wake_display(macropad_param=macropad_param)
-
-        for item in sequence_param:
-            if isinstance(item, int):
-                if item >= 0:
-                    macropad_param.keyboard.press(item)
-                else:
-                    macropad_param.keyboard.release(-item)
-            elif isinstance(item, float):
-                time.sleep(item)
-            elif isinstance(item, str):
-                macropad_param.keyboard_layout.write(item)
-            elif isinstance(item, list):
-                for code in item:
-                    if isinstance(code, int):
-                        macropad_param.consumer_control.release()
-                        macropad_param.consumer_control.press(code)
-                    if isinstance(code, float):
-                        time.sleep(code)
-            elif isinstance(item, dict):
-                handle_dict_item(item_param=item, macropad_param=macropad_param,
-                                 max_brightness=max_brightness, display_manager_param=display_manager_param)
-    else:
-        # Release any still-pressed keys, consumer codes, mouse buttons
-        # Keys and mouse buttons are individually released this way (rather
-        # than release_all()) because pad supports multi-key rollover, e.g.
-        # could have a meta key or right-mouse held down by one macro and
-        # press/release keys/buttons with others. Navigate popups, etc.
-        for item in sequence_param:
-            if isinstance(item, int):
-                if item >= 0:
-                    macropad_param.keyboard.release(item)
-            elif isinstance(item, dict):
-                if "buttons" in item:
-                    if item["buttons"] >= 0:
-                        macropad_param.mouse.release(item["buttons"])
-                elif "tone" in item:
-                    macropad_param.stop_tone()
-        macropad_param.consumer_control.release()
-        if key_number < 12:  # No pixel for encoder button
-            macropad_param.pixels[key_number] = apps[app_index].macros[key_number][0]
-            macropad_param.pixels.show()
-    return start_time
-
-
-def handle_dict_item(item_param, macropad_param, max_brightness, display_manager_param):
-    if "test_string" in item_param:
-        internal_selection = item_param["test_string"]
-        if "toggle_effect" in internal_selection:
-            pass  # TODO: Implement the toggle effect
-        elif "increase_brightness" in internal_selection:
-            max_brightness = display_manager_param.increase_brightness(max_brightness, param_max_brightness=1.0,
-                                                                       delta=0.1)
-            max_brightness = max_brightness
-            macropad_param.pixels.brightness = max_brightness
-            macropad_param.pixels.show()
-        elif "decrease_brightness" in internal_selection:
-            max_brightness = display_manager_param.decrease_brightness(max_brightness, delta=0.1)
-            max_brightness = max_brightness
-            macropad_param.pixels.brightness = max_brightness
-            macropad_param.pixels.show()
-
-
-class DisplayManager:
-    def __init__(self, initial_brightness):
-        self.is_display_asleep = False
-        self.global_key_brightness = initial_brightness
-        self.last_known_brightness = initial_brightness
-
-    def wake_display(self, macropad_param):
-        if self.is_display_asleep:
-            print("Waking up display")
-            self.restore_brightness()
-            macropad_param.display_sleep = False
-            macropad_param.pixels.brightness = self.global_key_brightness
-            macropad_param.pixels.show()
-            macropad_param.display.refresh()
-            self.is_display_asleep = False
-        return time.time()
-
-    def sleep_display(self, macropad_param):
-        if not self.is_display_asleep:
-            print("Putting display to sleep")
-            self.save_brightness_state()
-            self.global_key_brightness = 0.0
-            macropad_param.display_sleep = True
-            macropad_param.pixels.brightness = self.global_key_brightness
-            macropad_param.pixels.show()
-            macropad_param.display.refresh()
-            self.is_display_asleep = True
-
-    def restore_brightness(self):
-        self.global_key_brightness = self.last_known_brightness
-
-    def save_brightness_state(self):
-        self.last_known_brightness = self.global_key_brightness
-
-    def manage_sleep_logic(self, start_time, sleep_time_param, macropad_param, neokey_param):
-        inner_current_time = time.time()
-        elapsed_time = inner_current_time - start_time
-        if elapsed_time >= sleep_time_param and not self.is_display_asleep:
-            self.sleep_display(macropad_param=macropad_param)
-            neokey_param.pixels.brightness = self.global_key_brightness
-        return inner_current_time
-
-    def increase_brightness(self, current_brightness, param_max_brightness=1.0, delta=0.1):
-        """
-        Increase the brightness.
-        # TODO fix this, is only increasing once
-
-        :param current_brightness: The current brightness level.
-        :param param_max_brightness: The maximum brightness that can be achieved. Default is 1.0.
-        :param delta: The amount to increase the brightness by. Default is 0.1.
-        :return: The new brightness level.
-        """
-        print("Increasing brightness")
-        new_brightness = current_brightness + delta
-        new_brightness = min(new_brightness, param_max_brightness)  # Ensure brightness does not exceed max_brightness
-
-        self.global_key_brightness = new_brightness
-        return new_brightness
-
-    def decrease_brightness(self, current_brightness, delta=0.1):
-        """
-        Decrease the brightness.
-
-        :param current_brightness: The current brightness level.
-        :param delta: The amount to decrease the brightness by. Default is 0.1.
-        :return: The new brightness level.
-        """
-        print("Decreasing brightness")
-        new_brightness = current_brightness - delta
-        new_brightness = max(new_brightness, 0.0)  # Ensure brightness does not go below 0.0
-
-        self.global_key_brightness = new_brightness
-        return new_brightness
-
-
-display_manager = DisplayManager(initial_brightness=0.1)
-
 while True:
-    update_debouncers(debouncers_param=debouncers, neokey_param=neokey)
-    check_buttons(debouncers_param=debouncers, neokey_param=neokey, colors_param=colors, macropad_param=macropad)
-    neokey.pixels.brightness = display_manager.global_key_brightness
+    # Handle NeoKey buttons
+    handle_neokey_buttons(neokey_debouncers, neokey_manager, macropad)
 
-    last_move_time = animate_label(label_to_animate_param=label_to_animate, last_move_time_param=last_move_time,
-                                   macropad_param=macropad)
-    #
-    # print(f"sleep_time: {sleep_time}")
-    # print(f"global_start_time: {global_start_time}")
-    display_manager.manage_sleep_logic(start_time=global_start_time,
-                                       sleep_time_param=sleep_time,
-                                       macropad_param=macropad, neokey_param=neokey)
+    # Animate app name
+    last_animation_time = animate_label(group[13], last_animation_time, macropad)
 
-    # print(f"global_start_time: {global_start_time}")
+    # Manage sleep
+    display_manager.manage_sleep(activity_time, SLEEP_TIME, macropad, neokey_manager)
 
-    # Read encoder position. If it's changed, switch apps.
+    # Update NeoKey connection status in app name
+    if not neokey_manager.is_connected:
+        if "[!]" not in group[13].text:
+            group[13].text = f"{apps[app_index].name} [!]"
+    else:
+        if "[!]" in group[13].text:
+            group[13].text = apps[app_index].name
+
+    # Handle encoder rotation
     position = macropad.encoder
     if position != last_position:
         app_index = position % len(apps)
-        apps[app_index].switch()
+        apps[app_index].switch(macropad, group)
         last_position = position
+        activity_time = display_manager.wake_display(macropad, neokey_manager)
 
-        global_start_time = display_manager.wake_display(macropad_param=macropad)
-        # print(f"encoder global_start_time: {global_start_time}")
-
-    # Handle encoder button. If state has changed, and if there's a
-    # corresponding macro, set up variables to act on this just like
-    # the keypad keys, as if it were a 13th key/macro.
+    # Handle encoder button
     macropad.encoder_switch_debounced.update()
     encoder_switch = macropad.encoder_switch_debounced.pressed
-    if encoder_switch != last_encoder_switch:
-        global_start_time = display_manager.wake_display(macropad_param=macropad)
-        # print(f"encoder switch global_start_time: {global_start_time}")
 
+    if encoder_switch != last_encoder_switch:
+        activity_time = display_manager.wake_display(macropad, neokey_manager)
         last_encoder_switch = encoder_switch
+
         if len(apps[app_index].macros) < 13:
-            continue  # No 13th macro, just resume main loop
-        key_number = 12  # else process below as 13th macro
+            continue
+
+        key_number = 12
         pressed = encoder_switch
     else:
         event = macropad.keys.events.get()
         if not event or event.key_number >= len(apps[app_index].macros):
-            continue  # No key events, or no corresponding macro, resume loop
+            continue
+
         key_number = event.key_number
         pressed = event.pressed
 
-    # If code reaches here, a key or the encoder button WAS pressed/released
-    # and there IS a corresponding macro available for it...other situations
-    # are avoided by 'continue' statements above which resume the loop.
-
+    # Execute macro sequence
     sequence = apps[app_index].macros[key_number][2]
-    global_start_time = execute_sequence(pressed_param=pressed, sequence_param=sequence,
-                                         macropad_param=macropad,
-                                         max_brightness=global_key_brightness,
-                                         start_time=global_start_time,
-                                         display_manager_param=display_manager)
-    # print(f" popo global_start_time: {global_start_time}")
+    activity_time = execute_macro_sequence(
+        sequence,
+        pressed,
+        key_number,
+        macropad,
+        display_manager,
+        apps,
+        app_index,
+        neokey_manager,
+    )
