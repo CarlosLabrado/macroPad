@@ -16,22 +16,35 @@
 # To reference Consumer Control codes, import ConsumerControlCode like so...
 from adafruit_hid.consumer_control_code import ConsumerControlCode
 from adafruit_hid.keycode import Keycode  # REQUIRED if using Keycode.* values
+
 app = {  # REQUIRED dict, must be named 'app'
     "name": "Rectangle",  # Application name
     "macros": [  # List of button macros...
         # COLOR    LABEL    KEY SEQUENCE
         # 1st row ----------
-        (0x003366, "[ ]   ", [Keycode.ALT, Keycode.COMMAND, Keycode.LEFT_ARROW]),# Left half
-        (0x00FFFF, "[      ]",  [Keycode.ALT, Keycode.COMMAND, Keycode.ENTER]),# Full screen
-        (0x0033CC, "   [ ]", [Keycode.ALT, Keycode.COMMAND, Keycode.RIGHT_ARROW]),# Right half
+        (
+            0x003366,
+            "[ ]   ",
+            [Keycode.ALT, Keycode.COMMAND, Keycode.LEFT_ARROW],
+        ),  # Left half
+        (
+            0x00FFFF,
+            "[      ]",
+            [Keycode.ALT, Keycode.COMMAND, Keycode.ENTER],
+        ),  # Full screen
+        (
+            0x0033CC,
+            "   [ ]",
+            [Keycode.ALT, Keycode.COMMAND, Keycode.RIGHT_ARROW],
+        ),  # Right half
         # 2nd row ----------
-        (0x00CCFF, "[]   ",   [Keycode.ALT, Keycode.COMMAND, Keycode.Y]),# Left fourth
-        (0x003399, "[   ]", [Keycode.ALT, Keycode.COMMAND, Keycode.P]),# Mid Half
-        (0x33FFFF, "   []",  [Keycode.ALT, Keycode.COMMAND, Keycode.N]),# Right fourth
+        (0x00CCFF, "[]   ", [Keycode.ALT, Keycode.COMMAND, Keycode.Y]),  # Left fourth
+        (0x003399, "[   ]", [Keycode.ALT, Keycode.COMMAND, Keycode.P]),  # Mid Half
+        (0x33FFFF, "   []", [Keycode.ALT, Keycode.COMMAND, Keycode.N]),  # Right fourth
         # 3rd row ----------
-        (0x66FFFF, "[ ]  ", [Keycode.ALT, Keycode.COMMAND, Keycode.D]),# Left third
-        (0x99FFFF, " [ ] ", [Keycode.ALT, Keycode.COMMAND, Keycode.F]),# Mid third
-        (0xCCFFFF, "  [ ]", [Keycode.ALT, Keycode.COMMAND, Keycode.G]),# Right third
+        (0x66FFFF, "[ ]  ", [Keycode.ALT, Keycode.COMMAND, Keycode.D]),  # Left third
+        (0x99FFFF, " [ ] ", [Keycode.ALT, Keycode.COMMAND, Keycode.F]),  # Mid third
+        (0xCCFFFF, "  [ ]", [Keycode.ALT, Keycode.COMMAND, Keycode.G]),  # Right third
         # 4th row ----------
         (0x680017, "<<", [[ConsumerControlCode.SCAN_PREVIOUS_TRACK]]),
         (0x73000B, "Play", [[ConsumerControlCode.PLAY_PAUSE]]),

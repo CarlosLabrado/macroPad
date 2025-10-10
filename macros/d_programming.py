@@ -30,9 +30,9 @@ app = {  # REQUIRED dict, must be named 'app'
         (0x557755, "Debug", [Keycode.LEFT_SHIFT, Keycode.F9]),
         (0x446644, "Out", [Keycode.LEFT_SHIFT, Keycode.F8]),
         # 3rd row ----------
-        (0x335533, "Usages",  [Keycode.LEFT_ALT, Keycode.F7]),
-        (0x224422, "Surnd",  [Keycode.LEFT_CONTROL, Keycode.LEFT_ALT, Keycode.T]),
-        (0x113311, "Refact",  [Keycode.LEFT_SHIFT, Keycode.F6]),
+        (0x335533, "Usages", [Keycode.LEFT_ALT, Keycode.F7]),
+        (0x224422, "Surnd", [Keycode.LEFT_CONTROL, Keycode.LEFT_ALT, Keycode.T]),
+        (0x113311, "Refact", [Keycode.LEFT_SHIFT, Keycode.F6]),
         # 4th row ----------
         (0x556B2F, "Stop", [Keycode.LEFT_CONTROL, Keycode.F2]),  # Olive
         (0x556B2F, "Over", [Keycode.LEFT_CONTROL, Keycode.F2]),

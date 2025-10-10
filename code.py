@@ -68,11 +68,11 @@ class NeoKey1x4(Seesaw):
     """
 
     def __init__(
-            self,
-            i2c_bus: I2C,
-            interrupt: bool = False,
-            addr: int = NEOKEY_ADDR,
-            brightness: float = 0.01,
+        self,
+        i2c_bus: I2C,
+        interrupt: bool = False,
+        addr: int = NEOKEY_ADDR,
+        brightness: float = 0.01,
     ) -> None:
         super().__init__(i2c_bus, addr)
         self.interrupt_enabled = interrupt
@@ -149,7 +149,9 @@ class NeoKeyManager:
             True if connection successful, False otherwise.
         """
         try:
-            self.device = NeoKey1x4(self.i2c_bus, addr=self.addr, brightness=self.brightness)
+            self.device = NeoKey1x4(
+                self.i2c_bus, addr=self.addr, brightness=self.brightness
+            )
             self.is_connected = True
             self._failed_reads = 0
             print(f"NeoKey connected at {hex(self.addr)}")
@@ -506,10 +508,18 @@ def load_apps(macro_folder):
             try:
                 module = __import__(macro_folder + "/" + filename[:-3])
                 apps.append(App(module.app))
-            except (SyntaxError, ImportError, AttributeError, KeyError,
-                    NameError, IndexError, TypeError) as err:
+            except (
+                SyntaxError,
+                ImportError,
+                AttributeError,
+                KeyError,
+                NameError,
+                IndexError,
+                TypeError,
+            ) as err:
                 print(f"ERROR in {filename}")
                 import traceback
+
                 traceback.print_exception(err, err, err.__traceback__)
 
     return apps
@@ -597,7 +607,7 @@ def handle_neokey_buttons(debouncers, neokey_manager, macropad):
         Keycode.ESCAPE,
         ConsumerControlCode.VOLUME_INCREMENT,
         ConsumerControlCode.VOLUME_DECREMENT,
-        ConsumerControlCode.PLAY_PAUSE
+        ConsumerControlCode.PLAY_PAUSE,
     ]
 
     color_pressed = 0x800080  # Purple
@@ -620,8 +630,16 @@ def handle_neokey_buttons(debouncers, neokey_manager, macropad):
     macropad.consumer_control.release()
 
 
-def execute_macro_sequence(sequence, pressed, key_number, macropad,
-                           display_manager, apps, app_index, neokey_manager=None):
+def execute_macro_sequence(
+    sequence,
+    pressed,
+    key_number,
+    macropad,
+    display_manager,
+    apps,
+    app_index,
+    neokey_manager=None,
+):
     """Execute a macro key sequence.
 
     Args:
@@ -763,14 +781,10 @@ while True:
     handle_neokey_buttons(neokey_debouncers, neokey_manager, macropad)
 
     # Animate app name
-    last_animation_time = animate_label(
-        group[13], last_animation_time, macropad
-    )
+    last_animation_time = animate_label(group[13], last_animation_time, macropad)
 
     # Manage sleep
-    display_manager.manage_sleep(
-        activity_time, SLEEP_TIME, macropad, neokey_manager
-    )
+    display_manager.manage_sleep(activity_time, SLEEP_TIME, macropad, neokey_manager)
 
     # Update NeoKey connection status in app name
     if not neokey_manager.is_connected:
@@ -812,6 +826,12 @@ while True:
     # Execute macro sequence
     sequence = apps[app_index].macros[key_number][2]
     activity_time = execute_macro_sequence(
-        sequence, pressed, key_number, macropad,
-        display_manager, apps, app_index, neokey_manager
+        sequence,
+        pressed,
+        key_number,
+        macropad,
+        display_manager,
+        apps,
+        app_index,
+        neokey_manager,
     )
