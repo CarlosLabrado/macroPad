@@ -13,6 +13,7 @@ set, press MACROPAD keys to send key sequences and other USB protocols.
 
 ## IMPORTANT we are using circuitpython 8x
 
+# Add these imports near the top of the file
 import os
 import time
 import displayio
@@ -46,7 +47,6 @@ _NEOKEY1X4_NEOPIX_PIN = const(3)
 _NEOKEY1X4_NUM_ROWS = const(1)
 _NEOKEY1X4_NUM_COLS = const(4)
 _NEOKEY1X4_NUM_KEYS = const(4)
-
 
 class NeoKey1x4(Seesaw):
     """Driver for the Adafruit NeoKey 1x4."""
@@ -197,11 +197,13 @@ last_encoder_switch = macropad.encoder_switch_debounced.pressed
 app_index = 0
 apps[app_index].switch()
 
+## enhancements:
+
 # MAIN LOOP ----------------------------
 
 global_start_time = time.time()
-# sleep_time = 60 * 60  # minutes
-sleep_time = 10  # secs
+sleep_time = 60 * 60  # minutes
+# sleep_time = 10  # secs
 
 last_move_time = global_start_time
 
@@ -226,8 +228,7 @@ class Debouncer:
 debouncers = [Debouncer() for _ in range(4)]
 
 # Define a list of colors for each key
-colors = [0xFF0000, 0xFFFF00, 0x00FF00, 0x00FFFF]
-
+colors = [0x800080, 0x800080, 0x800080, 0x800080]  # Purple (RGB: 128, 0, 128)
 
 def update_debouncers(debouncers_param, neokey_param):
     for i in range(4):  # Only for the new keys
@@ -248,8 +249,9 @@ def check_buttons(debouncers_param, neokey_param, colors_param, macropad_param):
                 macropad_param.consumer_control.release()
                 macropad_param.consumer_control.press(key_mapping[i])
         else:
-            neokey_param.pixels[i] = 0xFF0000
-    macropad_param.consumer_control.release()
+            neokey_param.pixels[i] = 0x800080  # Purple instead of red (0xFF0000)
+
+        macropad_param.consumer_control.release()
 
 
 def animate_label(label_to_animate_param, last_move_time_param, macropad_param):
@@ -407,7 +409,11 @@ display_manager = DisplayManager(initial_brightness=0.1)
 
 while True:
     update_debouncers(debouncers_param=debouncers, neokey_param=neokey)
-    check_buttons(debouncers_param=debouncers, neokey_param=neokey, colors_param=colors, macropad_param=macropad)
+    try:
+        check_buttons(debouncers_param=debouncers, neokey_param=neokey, colors_param=colors, macropad_param=macropad)
+    except Exception as e:
+        print("Failed to check buttons")
+
     neokey.pixels.brightness = display_manager.global_key_brightness
 
     last_move_time = animate_label(label_to_animate_param=label_to_animate, last_move_time_param=last_move_time,
