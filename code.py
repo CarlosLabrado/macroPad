@@ -29,6 +29,7 @@ from adafruit_hid.consumer_control_code import ConsumerControlCode
 from micropython import const
 from adafruit_seesaw import neopixel
 from adafruit_seesaw.seesaw import Seesaw
+import supervisor
 
 try:
     import typing
@@ -43,6 +44,8 @@ INITIAL_SCREEN_BRIGHTNESS = 0.0  # OLED brightness (0.0 = dim, 1.0 = bright)
 SLEEP_TIME = 60 * 60  # 1 hour in seconds
 NEOKEY_ADDR = 0x30
 NEOKEY_RECONNECT_INTERVAL = 5.0
+CRASH_LOG_FILE = "/crash_log.txt"
+MAX_LOG_SIZE = 10000  # Bytes - rotate log if larger
 
 # Preset brightness modes
 NORMAL_LED_BRIGHTNESS = 0.1
@@ -55,6 +58,100 @@ OFF_SCREEN_BRIGHTNESS = 0.0
 # NeoKey1x4 Constants
 _NEOKEY1X4_NEOPIX_PIN = const(3)
 _NEOKEY1X4_NUM_KEYS = const(4)
+
+
+class CrashLogger:
+    """Logs crashes and errors to a file for post-mortem analysis.
+
+    Attributes:
+        log_file: Path to the log file.
+        max_size: Maximum log file size before rotation.
+    """
+
+    def __init__(self, log_file=CRASH_LOG_FILE, max_size=MAX_LOG_SIZE):
+        """Initialize crash logger.
+
+        Args:
+            log_file: Path to log file. Default is /crash_log.txt.
+            max_size: Max file size in bytes. Default is 10000.
+        """
+        self.log_file = log_file
+        self.max_size = max_size
+        self._check_and_rotate()
+
+    def _check_and_rotate(self):
+        """Check log file size and rotate if needed."""
+        try:
+            stat = os.stat(self.log_file)
+            if stat[6] > self.max_size:  # stat[6] is file size
+                # Rotate: delete old, create new
+                os.remove(self.log_file)
+                self._write_header()
+        except OSError:
+            # File doesn't exist, create it
+            self._write_header()
+
+    def _write_header(self):
+        """Write log file header."""
+        try:
+            with open(self.log_file, "w") as f:
+                f.write("=== MacroPad Crash Log ===\n")
+                f.write(f"Initialized at boot\n")
+                f.write("=" * 40 + "\n\n")
+        except OSError as e:
+            print(f"Could not create log file: {e}")
+
+    def log_crash(self, exception, context=""):
+        """Log a crash with full traceback.
+
+        Args:
+            exception: The exception object.
+            context: Optional context string describing what was happening.
+        """
+        try:
+            import traceback
+
+            with open(self.log_file, "a") as f:
+                f.write("\n" + "=" * 40 + "\n")
+                f.write(f"CRASH DETECTED\n")
+                if context:
+                    f.write(f"Context: {context}\n")
+                f.write(f"Exception: {type(exception).__name__}\n")
+                f.write(f"Message: {str(exception)}\n")
+                f.write("-" * 40 + "\n")
+                f.write("Traceback:\n")
+                traceback.print_exception(
+                    exception, exception, exception.__traceback__, file=f
+                )
+                f.write("=" * 40 + "\n")
+
+            print(f"Crash logged to {self.log_file}")
+        except Exception as e:
+            print(f"Failed to log crash: {e}")
+
+    def log_event(self, message):
+        """Log a non-crash event for debugging.
+
+        Args:
+            message: Event message to log.
+        """
+        try:
+            with open(self.log_file, "a") as f:
+                f.write(f"[EVENT] {message}\n")
+        except OSError:
+            pass  # Silently fail for events
+
+    def log_power_event(self, event_type):
+        """Log power-related events (USB disconnect, reconnect, etc).
+
+        Args:
+            event_type: Type of power event (e.g., "USB_DISCONNECT", "USB_RECONNECT").
+        """
+        try:
+            with open(self.log_file, "a") as f:
+                f.write(f"\n[POWER EVENT] {event_type}\n")
+        except OSError:
+            pass
 
 
 class NeoKey1x4(Seesaw):
@@ -734,6 +831,10 @@ def handle_special_macro(item, macropad, display_manager, neokey_manager=None):
 
 # INITIALIZATION -----------------------
 
+# Initialize crash logger FIRST, before anything else
+crash_logger = CrashLogger()
+crash_logger.log_event("=== BOOT: System starting ===")
+
 print("Initializing MacroPad...")
 macropad = MacroPad()
 macropad.display.auto_refresh = False
@@ -743,8 +844,15 @@ macropad.pixels.brightness = INITIAL_LED_BRIGHTNESS
 
 # Initialize NeoKey with resilience
 print("Initializing NeoKey...")
-i2c_bus = board.I2C()
-neokey_manager = NeoKeyManager(i2c_bus, brightness=INITIAL_LED_BRIGHTNESS * 0.1)
+try:
+    i2c_bus = board.I2C()
+    neokey_manager = NeoKeyManager(i2c_bus, brightness=INITIAL_LED_BRIGHTNESS * 0.1)
+    crash_logger.log_event("NeoKey initialized successfully")
+except Exception as e:
+    crash_logger.log_crash(e, "During NeoKey initialization")
+    # Continue without NeoKey
+    neokey_manager = None
+    print(f"NeoKey initialization failed, continuing without it: {e}")
 
 # Set up display
 group = setup_display(macropad)
@@ -771,67 +879,138 @@ apps[app_index].switch(macropad, group)
 
 activity_time = time.time()
 last_animation_time = activity_time
+last_heartbeat_time = activity_time
+heartbeat_interval = 300  # Log heartbeat every 5 minutes
 
+# USB monitoring
+last_usb_state = supervisor.runtime.usb_connected
+if last_usb_state:
+    crash_logger.log_event("USB connected at boot")
+else:
+    crash_logger.log_event("USB disconnected at boot")
+
+crash_logger.log_event("Main loop starting")
 print("Starting main loop...")
 
 # MAIN LOOP ----------------------------
 
-while True:
-    # Handle NeoKey buttons
-    handle_neokey_buttons(neokey_debouncers, neokey_manager, macropad)
+try:
+    while True:
+        # Monitor USB connection state
+        current_usb_state = supervisor.runtime.usb_connected
+        if current_usb_state != last_usb_state:
+            if current_usb_state:
+                crash_logger.log_power_event("USB_RECONNECTED")
+                print("USB reconnected")
+            else:
+                crash_logger.log_power_event("USB_DISCONNECTED")
+                print("USB disconnected")
+            last_usb_state = current_usb_state
 
-    # Animate app name
-    last_animation_time = animate_label(group[13], last_animation_time, macropad)
+        # Heartbeat logging every 5 minutes
+        current_time = time.time()
+        if current_time - last_heartbeat_time >= heartbeat_interval:
+            usb_status = "connected" if current_usb_state else "disconnected"
+            crash_logger.log_event(
+                f"Heartbeat: Running normally, app={apps[app_index].name}, USB={usb_status}"
+            )
+            last_heartbeat_time = current_time
 
-    # Manage sleep
-    display_manager.manage_sleep(activity_time, SLEEP_TIME, macropad, neokey_manager)
+        # Handle NeoKey buttons
+        try:
+            if neokey_manager:
+                handle_neokey_buttons(neokey_debouncers, neokey_manager, macropad)
+        except Exception as e:
+            crash_logger.log_crash(e, "In handle_neokey_buttons()")
+            print(f"NeoKey button handling error: {e}")
+            # Continue without NeoKey functionality
 
-    # Update NeoKey connection status in app name
-    if not neokey_manager.is_connected:
-        if "[!]" not in group[13].text:
-            group[13].text = f"{apps[app_index].name} [!]"
-    else:
-        if "[!]" in group[13].text:
-            group[13].text = apps[app_index].name
+        # Animate app name
+        last_animation_time = animate_label(group[13], last_animation_time, macropad)
 
-    # Handle encoder rotation
-    position = macropad.encoder
-    if position != last_position:
-        app_index = position % len(apps)
-        apps[app_index].switch(macropad, group)
-        last_position = position
-        activity_time = display_manager.wake_display(macropad, neokey_manager)
+        # Manage sleep
+        display_manager.manage_sleep(
+            activity_time, SLEEP_TIME, macropad, neokey_manager
+        )
 
-    # Handle encoder button
-    macropad.encoder_switch_debounced.update()
-    encoder_switch = macropad.encoder_switch_debounced.pressed
+        # Update NeoKey connection status in app name
+        if neokey_manager:
+            if not neokey_manager.is_connected:
+                if "[!]" not in group[13].text:
+                    group[13].text = f"{apps[app_index].name} [!]"
+            else:
+                if "[!]" in group[13].text:
+                    group[13].text = apps[app_index].name
 
-    if encoder_switch != last_encoder_switch:
-        activity_time = display_manager.wake_display(macropad, neokey_manager)
-        last_encoder_switch = encoder_switch
+        # Handle encoder rotation
+        position = macropad.encoder
+        if position != last_position:
+            app_index = position % len(apps)
+            apps[app_index].switch(macropad, group)
+            last_position = position
+            activity_time = display_manager.wake_display(macropad, neokey_manager)
 
-        if len(apps[app_index].macros) < 13:
-            continue
+        # Handle encoder button
+        macropad.encoder_switch_debounced.update()
+        encoder_switch = macropad.encoder_switch_debounced.pressed
 
-        key_number = 12
-        pressed = encoder_switch
-    else:
-        event = macropad.keys.events.get()
-        if not event or event.key_number >= len(apps[app_index].macros):
-            continue
+        if encoder_switch != last_encoder_switch:
+            activity_time = display_manager.wake_display(macropad, neokey_manager)
+            last_encoder_switch = encoder_switch
 
-        key_number = event.key_number
-        pressed = event.pressed
+            if len(apps[app_index].macros) < 13:
+                continue
 
-    # Execute macro sequence
-    sequence = apps[app_index].macros[key_number][2]
-    activity_time = execute_macro_sequence(
-        sequence,
-        pressed,
-        key_number,
-        macropad,
-        display_manager,
-        apps,
-        app_index,
-        neokey_manager,
-    )
+            key_number = 12
+            pressed = encoder_switch
+        else:
+            event = macropad.keys.events.get()
+            if not event or event.key_number >= len(apps[app_index].macros):
+                continue
+
+            key_number = event.key_number
+            pressed = event.pressed
+
+        # Execute macro sequence
+        try:
+            sequence = apps[app_index].macros[key_number][2]
+            activity_time = execute_macro_sequence(
+                sequence,
+                pressed,
+                key_number,
+                macropad,
+                display_manager,
+                apps,
+                app_index,
+                neokey_manager,
+            )
+        except Exception as e:
+            crash_logger.log_crash(
+                e,
+                f"In execute_macro_sequence(), key={key_number}, app={apps[app_index].name}",
+            )
+            print(f"Macro execution error: {e}")
+
+except KeyboardInterrupt:
+    crash_logger.log_event("=== SHUTDOWN: KeyboardInterrupt received ===")
+    print("\nShutdown requested")
+    raise
+
+except Exception as e:
+    # Catch any uncaught exception in main loop
+    crash_logger.log_crash(e, "UNCAUGHT EXCEPTION in main loop")
+    print(f"\n!!! FATAL ERROR !!!")
+    print(f"Exception: {type(e).__name__}: {e}")
+    print(f"Crash logged to {CRASH_LOG_FILE}")
+    print("Please check the log file for details")
+
+    # Try to show error on display
+    try:
+        group[13].text = "CRASHED - SEE LOG"
+        macropad.display.refresh()
+    except:
+        pass
+
+    # Keep display showing error
+    while True:
+        time.sleep(1)

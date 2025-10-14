@@ -10,6 +10,8 @@ A production-ready CircuitPython macro keyboard system for Adafruit MacroPad wit
 - **Brightness control** via macro commands
 - **Scrolling app name display**
 - **Visual disconnect indicator** shows `[!]` when NeoKey is offline
+- **Crash logging** - automatic logging of crashes and errors to `/crash_log.txt`
+- **USB monitoring** - tracks USB disconnect/reconnect events
 
 ## Hardware Requirements
 
@@ -38,7 +40,7 @@ CIRCUITPY/
     ├── adafruit_seesaw/
     └── ...
 ```
-![img.png](docs/img.png)
+
 ## Creating Macro Files
 
 Each macro file in `/macros` defines one "app" - a set of 12 key bindings plus an optional encoder button binding.
@@ -179,6 +181,8 @@ INITIAL_SCREEN_BRIGHTNESS = 0.0         # Starting screen brightness (0.0-1.0)
 SLEEP_TIME = 60 * 60                    # Sleep after 1 hour (seconds)
 NEOKEY_ADDR = 0x30                      # I2C address of NeoKey
 NEOKEY_RECONNECT_INTERVAL = 5.0         # Reconnect attempt interval
+CRASH_LOG_FILE = "/crash_log.txt"       # Path to crash log
+MAX_LOG_SIZE = 10000                    # Max log size before rotation (bytes)
 
 # Preset brightness modes
 NORMAL_LED_BRIGHTNESS = 0.1             # Normal mode LED brightness
@@ -218,6 +222,33 @@ App                     - Represents one macro application
 - On wake from sleep, force immediate reconnect attempt
 
 ## Troubleshooting
+
+### System crashes or random resets
+
+The system automatically logs all crashes to `/crash_log.txt` on the CIRCUITPY drive.
+
+**To diagnose crashes:**
+1. Connect MacroPad to your computer
+2. Open the CIRCUITPY drive
+3. Open `/crash_log.txt` in a text editor
+4. Look for entries with "CRASH DETECTED" or "POWER EVENT"
+
+**Log entries include:**
+- Full Python tracebacks with line numbers
+- Context of what was happening when crash occurred
+- USB disconnect/reconnect events
+- Heartbeat messages every 5 minutes (proves system was running)
+
+**Common crash causes:**
+- **USB power loss** - Computer going to sleep or USB hub losing power
+- **I2C bus lockup** - Can happen with STEMMA QT devices
+- **Memory exhaustion** - Too many macro files or complex macros
+
+**The log file automatically rotates** when it exceeds 10KB to prevent filling the drive.
+
+**After investigating**, you can safely delete `/crash_log.txt` - a new one will be created on next boot.
+
+**For detailed information about reading crash logs**, see [CRASH_LOG_GUIDE.md](CRASH_LOG_GUIDE.md).
 
 ### Display won't turn on after Off Mode
 
