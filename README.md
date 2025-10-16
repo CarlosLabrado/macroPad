@@ -21,7 +21,8 @@ A production-ready CircuitPython macro keyboard system for Adafruit MacroPad wit
 
 ## Installation
 
-1. Install CircuitPython 8.x on your MacroPad
+1. Install CircuitPython 8.x or 10.x on your MacroPad
+   - **For CircuitPython 10.x upgrade:** See [CIRCUITPYTHON_10_UPGRADE.md](CIRCUITPYTHON_10_UPGRADE.md)
 2. Copy `code.py` to the root of your CIRCUITPY drive
 3. Create a `/macros` folder on CIRCUITPY
 4. Add your macro files (see below)

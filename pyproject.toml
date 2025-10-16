@@ -6,5 +6,6 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "adafruit-circuitpython-lis3dh==5.2.1",
+    "circup>=2.2.3",
     "ruff>=0.14.0",
 ]

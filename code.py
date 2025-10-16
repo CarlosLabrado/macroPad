@@ -119,9 +119,7 @@ class CrashLogger:
                 f.write(f"Message: {str(exception)}\n")
                 f.write("-" * 40 + "\n")
                 f.write("Traceback:\n")
-                traceback.print_exception(
-                    exception, exception, exception.__traceback__, file=f
-                )
+                traceback.print_exception(exception, file=f)
                 f.write("=" * 40 + "\n")
 
             print(f"Crash logged to {self.log_file}")
@@ -616,7 +614,7 @@ def load_apps(macro_folder):
                 print(f"ERROR in {filename}")
                 import traceback
 
-                traceback.print_exception(err, err, err.__traceback__)
+                traceback.print_exception(err)
 
     return apps
 
