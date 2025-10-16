@@ -29,7 +29,6 @@ from adafruit_hid.consumer_control_code import ConsumerControlCode
 from micropython import const
 from adafruit_seesaw import neopixel
 from adafruit_seesaw.seesaw import Seesaw
-import supervisor
 
 try:
     import typing
@@ -879,43 +878,13 @@ apps[app_index].switch(macropad, group)
 
 activity_time = time.time()
 last_animation_time = activity_time
-last_heartbeat_time = activity_time
-heartbeat_interval = 300  # Log heartbeat every 5 minutes
 
-# USB monitoring
-last_usb_state = supervisor.runtime.usb_connected
-if last_usb_state:
-    crash_logger.log_event("USB connected at boot")
-else:
-    crash_logger.log_event("USB disconnected at boot")
-
-crash_logger.log_event("Main loop starting")
 print("Starting main loop...")
 
 # MAIN LOOP ----------------------------
 
 try:
     while True:
-        # Monitor USB connection state
-        current_usb_state = supervisor.runtime.usb_connected
-        if current_usb_state != last_usb_state:
-            if current_usb_state:
-                crash_logger.log_power_event("USB_RECONNECTED")
-                print("USB reconnected")
-            else:
-                crash_logger.log_power_event("USB_DISCONNECTED")
-                print("USB disconnected")
-            last_usb_state = current_usb_state
-
-        # Heartbeat logging every 5 minutes
-        current_time = time.time()
-        if current_time - last_heartbeat_time >= heartbeat_interval:
-            usb_status = "connected" if current_usb_state else "disconnected"
-            crash_logger.log_event(
-                f"Heartbeat: Running normally, app={apps[app_index].name}, USB={usb_status}"
-            )
-            last_heartbeat_time = current_time
-
         # Handle NeoKey buttons
         try:
             if neokey_manager:
