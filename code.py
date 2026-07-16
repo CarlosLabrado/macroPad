@@ -708,20 +708,14 @@ def handle_neokey_buttons(debouncers, neokey_manager, macropad):
 
     for i in range(4):
         debouncers[i].update(keys[i])
+        neokey_manager.set_pixel(i, color_pressed)
 
         if debouncers[i].is_pressed():
-            neokey_manager.set_pixel(i, color_pressed)
-
             if i == 0:  # Keycode (ESC)
                 macropad.keyboard.press(key_mapping[i])
                 macropad.keyboard.release_all()
             else:  # Consumer control codes
-                macropad.consumer_control.release()
-                macropad.consumer_control.press(key_mapping[i])
-        else:
-            neokey_manager.set_pixel(i, color_pressed)
-
-    macropad.consumer_control.release()
+                macropad.consumer_control.send(key_mapping[i])
 
 
 def execute_macro_sequence(
